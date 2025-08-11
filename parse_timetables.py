@@ -125,7 +125,7 @@ def extract_schedule_times(lines: List[List[str]]) -> List[str]:
     return schedule_times
 
 
-def convert_and_binarize_image(image_path: str) -> str:
+def convert_and_binarize_image(image_path: str) -> Image:
     """
     Convert image to PNG format, apply binarization for better OCR, and save in png folder
 
@@ -135,16 +135,6 @@ def convert_and_binarize_image(image_path: str) -> str:
     Returns:
         Path to processed PNG file
     """
-    # Create png directory if it doesn't exist
-    png_dir = Path("timetables/png")
-    png_dir.mkdir(exist_ok=True)
-
-    # Get filename without extension and create PNG path
-    filename = Path(image_path).stem
-    png_path = png_dir / f"{filename}.png"
-
-    if png_path.exists():
-        return str(png_path)
 
     with Image.open(image_path) as img:
         # Convert CMYK to RGB if necessary
@@ -166,9 +156,7 @@ def convert_and_binarize_image(image_path: str) -> str:
         binary_array = (img_array > threshold).astype(np.uint8) * 255
         binary_img = Image.fromarray(binary_array, mode="L")
 
-        binary_img.save(png_path, "PNG")
-
-    return str(png_path)
+        return binary_img
 
 
 def extract_route_and_station(filename: str) -> Tuple[Optional[str], Optional[str]]:
@@ -195,12 +183,15 @@ def parse_timetable_image(image_path: str) -> Dict:
     """
     try:
         # Convert and binarize image for better OCR
-        image_path = convert_and_binarize_image(image_path)
+        image = convert_and_binarize_image(image_path)
+
+        os.makedirs("annotations", exist_ok=True)
+        annotation_path = f"annotations/{Path(image_path).stem}.png"
 
         # Perform OCR
-        ocr = ocrmac.OCR(image_path, framework="livetext")
+        ocr = ocrmac.OCR(image, framework="livetext")
         annotations = ocr.recognize()
-        # ocr.annotate_PIL().save("annotation.png")
+        ocr.annotate_PIL().save(annotation_path)
         # Group text by lines
         lines = group_text_by_lines(annotations)
 
@@ -288,7 +279,7 @@ def main():
         with open(output_file, "w", encoding="utf-8") as f:
             for future in as_completed(future_to_path):
                 result = future.result()
-                f.write(json.dumps(result, ensure_ascii=False) + "\n")
+                print(json.dumps(result, ensure_ascii=False), file=f)
 
                 if result["status"] == "success":
                     successful += 1
