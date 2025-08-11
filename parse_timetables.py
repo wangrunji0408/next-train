@@ -97,6 +97,8 @@ def extract_schedule_times(lines: List[List[str]]) -> List[str]:
 
         # Check if first number is an hour (4-23)
         try:
+            if line_text[:6] == "521521":
+                continue  # skip footer
             if line_text[0] in "456789":
                 hour = int(line_text[0])
                 line_text = line_text[1:]  # Remove hour from text
@@ -125,15 +127,15 @@ def extract_schedule_times(lines: List[List[str]]) -> List[str]:
     return schedule_times
 
 
-def convert_and_binarize_image(image_path: str) -> Image:
+def convert_and_binarize_image(image_path: str) -> List[Image.Image]:
     """
-    Convert image to PNG format, apply binarization for better OCR, and save in png folder
+    Convert image to PNG format, apply binarization for better OCR, and split if tall vertical
 
     Args:
         image_path: Path to image file
 
     Returns:
-        Path to processed PNG file
+        List of processed images (1 for normal images, 2 for split tall images)
     """
 
     with Image.open(image_path) as img:
@@ -148,15 +150,30 @@ def convert_and_binarize_image(image_path: str) -> Image:
         if img.mode != "L":
             img = img.convert("L")
 
-        # Apply binarization
-        img_array = np.array(img)
-        threshold = 96
+        width, height = img.size
 
-        # Apply threshold
-        binary_array = (img_array > threshold).astype(np.uint8) * 255
-        binary_img = Image.fromarray(binary_array, mode="L")
+        # Check if image is tall vertical (height/width > 3/2, which is aspect ratio > 2:3)
+        if height / width > 1.5:
+            # Split into two equal height parts
+            half_height = height // 2
+            top_img = img.crop((0, 0, width, half_height))
+            bottom_img = img.crop((0, half_height, width, height))
+            images = [top_img, bottom_img]
+        else:
+            images = [img]
 
-        return binary_img
+        processed_images = []
+        for image in images:
+            # Apply binarization
+            img_array = np.array(image)
+            threshold = 64
+
+            # Apply threshold
+            binary_array = (img_array > threshold).astype(np.uint8) * 255
+            binary_img = Image.fromarray(binary_array, mode="L")
+            processed_images.append(binary_img)
+
+        return processed_images
 
 
 def extract_route_and_station(filename: str) -> Tuple[Optional[str], Optional[str]]:
@@ -177,62 +194,73 @@ def extract_route_and_station(filename: str) -> Tuple[Optional[str], Optional[st
     return None, None
 
 
-def parse_timetable_image(image_path: str) -> Dict:
+def parse_timetable_image(image_path: str) -> List[Dict]:
     """
     Parse a single timetable image and extract all information
+    Returns list of results (multiple if image was split)
     """
     try:
-        # Convert and binarize image for better OCR
-        image = convert_and_binarize_image(image_path)
+        # Convert and binarize image for better OCR (may return multiple images if split)
+        images = convert_and_binarize_image(image_path)
 
         os.makedirs("annotations", exist_ok=True)
-        annotation_path = f"annotations/{Path(image_path).stem}.png"
+        results = []
 
-        # Perform OCR
-        ocr = ocrmac.OCR(image, framework="livetext")
-        annotations = ocr.recognize()
-        ocr.annotate_PIL().save(annotation_path)
-        # Group text by lines
-        lines = group_text_by_lines(annotations)
+        for i, image in enumerate(images):
+            suffix = f"_part{i+1}" if len(images) > 1 else ""
+            annotation_path = f"annotations/{Path(image_path).stem}{suffix}.png"
 
-        # Extract information
-        destination = extract_destination(lines)
-        operating_time = extract_operating_time(lines)
-        schedule_times = extract_schedule_times(lines)
-        route, station = extract_route_and_station(image_path)
+            # Perform OCR
+            ocr = ocrmac.OCR(image, framework="livetext")
+            annotations = ocr.recognize()
+            ocr.annotate_PIL().save(annotation_path)
 
-        # Debug
-        # print(f"{route} {station} {destination} {operating_time}")
-        # minutes = {}
-        # for time in schedule_times:
-        #     hour, minute = map(int, time.split(":"))
-        #     minutes[hour] = minutes.get(hour, []) + [minute]
-        # for hour, mins in sorted(minutes.items(), key=lambda x: x[0]):
-        #     print(f"{hour:02}:", end="")
-        #     for minute in mins:
-        #         print(f" {minute:02}", end="")
-        #     print()
+            # Group text by lines
+            lines = group_text_by_lines(annotations)
 
-        return {
-            "filename": os.path.basename(image_path),
-            "route": route,
-            "station": station,
-            "destination": destination,
-            "operating_time": operating_time,
-            "schedule_times": schedule_times,
-            "status": "success",
-        }
+            # Extract information
+            destination = extract_destination(lines)
+            operating_time = extract_operating_time(lines)
+            schedule_times = extract_schedule_times(lines)
+            route, station = extract_route_and_station(image_path)
+
+            # Debug
+            # print(f"{route} {station} {destination} {operating_time}")
+            # minutes = {}
+            # for time in schedule_times:
+            #     hour, minute = map(int, time.split(":"))
+            #     minutes[hour] = minutes.get(hour, []) + [minute]
+            # for hour, mins in sorted(minutes.items(), key=lambda x: x[0]):
+            #     print(f"{hour:02}:", end="")
+            #     for minute in mins:
+            #         print(f" {minute:02}", end="")
+            #     print()
+
+            result = {
+                "filename": os.path.basename(image_path) + suffix,
+                "route": route,
+                "station": station,
+                "destination": destination,
+                "operating_time": operating_time,
+                "schedule_times": schedule_times,
+                "status": "success",
+            }
+            results.append(result)
+
+        return results
     except Exception as e:
-        return {
-            "filename": os.path.basename(image_path),
-            "route": None,
-            "station": None,
-            "destination": None,
-            "operating_time": None,
-            "schedule_times": [],
-            "status": "error",
-            "error": str(e),
-        }
+        return [
+            {
+                "filename": os.path.basename(image_path),
+                "route": None,
+                "station": None,
+                "destination": None,
+                "operating_time": None,
+                "schedule_times": [],
+                "status": "error",
+                "error": str(e),
+            }
+        ]
 
 
 def main():
@@ -262,7 +290,6 @@ def main():
     print(f"Using {max_workers} parallel workers")
 
     # Process images in parallel
-    results = []
     successful = 0
     failed = 0
 
@@ -278,19 +305,20 @@ def main():
         # Process completed tasks
         with open(output_file, "w", encoding="utf-8") as f:
             for future in as_completed(future_to_path):
-                result = future.result()
-                print(json.dumps(result, ensure_ascii=False), file=f)
+                results_list = future.result()
+                for result in results_list:
+                    print(json.dumps(result, ensure_ascii=False), file=f)
 
-                if result["status"] == "success":
-                    successful += 1
-                    print(
-                        f"✓ {result['filename']}: {result['route']}-{result['station']} "
-                    )
-                else:
-                    failed += 1
-                    print(
-                        f"✗ {result['filename']}: {result.get('error', 'Unknown error')}"
-                    )
+                    if result["status"] == "success":
+                        successful += 1
+                        print(
+                            f"✓ {result['filename']}: {result['route']}-{result['station']} "
+                        )
+                    else:
+                        failed += 1
+                        print(
+                            f"✗ {result['filename']}: {result.get('error', 'Unknown error')}"
+                        )
 
     print(f"\nResults written to {output_file}")
     print(f"Successfully processed: {successful}")
