@@ -97,7 +97,7 @@ def extract_schedule_times(lines: List[List[str]]) -> List[str]:
 
         # Check if first number is an hour (4-23)
         try:
-            if line_text[:6] == "521521":
+            if "表" in line:
                 continue  # skip footer
             if line_text[0] in "456789":
                 hour = int(line_text[0])
