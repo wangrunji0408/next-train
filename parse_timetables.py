@@ -9,11 +9,12 @@ import json
 from pathlib import Path
 from typing import List, Tuple, Dict, Optional
 from concurrent.futures import ProcessPoolExecutor, as_completed
+import numpy as np
 from ocrmac import ocrmac
 from PIL import Image
 
 
-def group_text_by_lines(annotations: List[Tuple], eps: float = 1e-3) -> List[List[str]]:
+def group_text_by_lines(annotations: List[Tuple], eps: float = 1e-2) -> List[List[str]]:
     """
     Group OCR annotations by lines based on y-coordinate proximity.
 
@@ -31,7 +32,7 @@ def group_text_by_lines(annotations: List[Tuple], eps: float = 1e-3) -> List[Lis
     sorted_annotations = sorted(annotations, key=lambda x: x[2][1])
 
     lines = []
-    current_line = [sorted_annotations[0][0]]
+    current_line = [sorted_annotations[0]]
     current_y = sorted_annotations[0][2][1]
 
     for annotation in sorted_annotations[1:]:
@@ -39,15 +40,20 @@ def group_text_by_lines(annotations: List[Tuple], eps: float = 1e-3) -> List[Lis
 
         if abs(y_coord - current_y) <= eps:
             # Same line
-            current_line.append(annotation[0])
+            current_line.append(annotation)
         else:
             # New line
+            # Sort current line by x-coordinate (first element of bbox)
+            current_line = [
+                s for s, _, _ in sorted(current_line, key=lambda x: x[2][0])
+            ]
             lines.append(current_line)
-            current_line = [annotation[0]]
+            current_line = [annotation]
             current_y = y_coord
 
     # Add the last line
     if current_line:
+        current_line = [s for s, _, _ in sorted(current_line, key=lambda x: x[2][0])]
         lines.append(current_line)
 
     return lines
@@ -58,7 +64,7 @@ def extract_destination(lines: List[List[str]]) -> Optional[str]:
     Extract destination by finding pattern "开往XXX方向"
     """
     for line in lines:
-        line_text = " ".join(line)
+        line_text = "".join(line)
         match = re.search(r"开往(.+?)方向", line_text)
         if match:
             return match.group(1).strip()
@@ -70,7 +76,7 @@ def extract_operating_time(lines: List[List[str]]) -> Optional[str]:
     Extract operating time by finding "工作日" or "双休日"
     """
     for line in lines:
-        line_text = " ".join(line)
+        line_text = "".join(line)
         if "工作日" in line_text:
             return "工作日"
         elif "双休日" in line_text:
@@ -85,69 +91,79 @@ def extract_schedule_times(lines: List[List[str]]) -> List[str]:
     schedule_times = []
 
     for line in lines:
-        line_text = " ".join(line)
-
-        # Find all numbers in the line
-        numbers = re.findall(r"\d+", line_text)
-
-        if not numbers:
+        line_text = "".join([c for c in line if c.isnumeric()])
+        if not line_text:
             continue
 
         # Check if first number is an hour (4-23)
         try:
-            first_num = int(numbers[0])
-            if 4 <= first_num <= 23:
-                # This is a schedule line
-                hour = first_num
+            if line_text[0] in "456789":
+                hour = int(line_text[0])
+                line_text = line_text[1:]  # Remove hour from text
+            elif line_text[0:2] in [str(x) for x in range(10, 24)]:
+                hour = int(line_text[0:2])
+                line_text = line_text[2:]  # Remove hour from text
 
-                # Process remaining numbers as minutes
-                for minute_str in numbers[1:]:
-                    try:
-                        minute = int(minute_str)
-                        if 0 <= minute <= 59:  # Valid minute
-                            schedule_times.append(f"{hour:02d}:{minute:02d}")
-                    except ValueError:
-                        continue
+            # Process remaining numbers as minutes
+            while len(line_text) >= 2:
+                try:
+                    minute = int(line_text[0:2])
+                    if 0 <= minute <= 59:  # Valid minute
+                        schedule_times.append(f"{hour:02d}:{minute:02d}")
+                except ValueError:
+                    continue
+                finally:
+                    line_text = line_text[2:]  # Remove processed minute
 
         except ValueError:
             continue
 
+    schedule_times.sort()
     return schedule_times
 
 
-def convert_jpg_to_png(jpg_path: str) -> str:
+def convert_and_binarize_image(image_path: str) -> str:
     """
-    Convert JPG image to PNG format and save in png folder
+    Convert image to PNG format, apply binarization for better OCR, and save in png folder
 
     Args:
-        jpg_path: Path to JPG file
+        image_path: Path to image file
 
     Returns:
-        Path to converted PNG file
+        Path to processed PNG file
     """
-    if not Image:
-        raise ImportError("PIL module is required for image conversion")
-
     # Create png directory if it doesn't exist
     png_dir = Path("timetables/png")
     png_dir.mkdir(exist_ok=True)
 
     # Get filename without extension and create PNG path
-    filename = Path(jpg_path).stem
+    filename = Path(image_path).stem
     png_path = png_dir / f"{filename}.png"
 
-    if png_path.exists():
-        return str(png_path)
+    # if png_path.exists():
+    #     return str(png_path)
 
-    with Image.open(jpg_path) as img:
+    with Image.open(image_path) as img:
         # Convert CMYK to RGB if necessary
         if img.mode == "CMYK":
             img = img.convert("RGB")
-        # Convert other modes to RGB for PNG compatibility
+        # Convert other modes to RGB for compatibility
         elif img.mode not in ("RGB", "RGBA", "L", "LA"):
             img = img.convert("RGB")
 
-        img.save(png_path, "PNG")
+        # Convert to grayscale for binarization
+        if img.mode != "L":
+            img = img.convert("L")
+
+        # Apply binarization
+        img_array = np.array(img)
+        threshold = 128
+
+        # Apply threshold
+        binary_array = (img_array > threshold).astype(np.uint8) * 255
+        binary_img = Image.fromarray(binary_array, mode="L")
+
+        binary_img.save(png_path, "PNG")
 
     return str(png_path)
 
@@ -175,13 +191,13 @@ def parse_timetable_image(image_path: str) -> Dict:
     Parse a single timetable image and extract all information
     """
     try:
-        # Convert JPG to PNG if needed
-        if image_path.lower().endswith((".jpg", ".jpeg")):
-            image_path = convert_jpg_to_png(image_path)
+        # Convert and binarize image for better OCR
+        image_path = convert_and_binarize_image(image_path)
 
         # Perform OCR
-        annotations = ocrmac.OCR(image_path, framework="livetext").recognize()
-
+        ocr = ocrmac.OCR(image_path, framework="livetext")
+        annotations = ocr.recognize()
+        # ocr.annotate_PIL().save("annotation.png")
         # Group text by lines
         lines = group_text_by_lines(annotations)
 
@@ -191,6 +207,18 @@ def parse_timetable_image(image_path: str) -> Dict:
         schedule_times = extract_schedule_times(lines)
         route, station = extract_route_and_station(image_path)
 
+        # Debug
+        # print(f"{route} {station} {destination} {operating_time}")
+        # minutes = {}
+        # for time in schedule_times:
+        #     hour, minute = map(int, time.split(":"))
+        #     minutes[hour] = minutes.get(hour, []) + [minute]
+        # for hour, mins in sorted(minutes.items(), key=lambda x: x[0]):
+        #     print(f"{hour:02}:", end="")
+        #     for minute in mins:
+        #         print(f" {minute:02}", end="")
+        #     print()
+
         return {
             "filename": os.path.basename(image_path),
             "route": route,
@@ -198,7 +226,6 @@ def parse_timetable_image(image_path: str) -> Dict:
             "destination": destination,
             "operating_time": operating_time,
             "schedule_times": schedule_times,
-            "total_schedules": len(schedule_times),
             "status": "success",
         }
     except Exception as e:
@@ -209,7 +236,6 @@ def parse_timetable_image(image_path: str) -> Dict:
             "destination": None,
             "operating_time": None,
             "schedule_times": [],
-            "total_schedules": 0,
             "status": "error",
             "error": str(e),
         }
@@ -246,6 +272,8 @@ def main():
     successful = 0
     failed = 0
 
+    # image_files = [sorted(image_files)[0]]
+
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
         # Submit all tasks
         future_to_path = {
@@ -261,10 +289,7 @@ def main():
 
             if result["status"] == "success":
                 successful += 1
-                print(
-                    f"✓ {result['filename']}: {result['route']}-{result['station']} "
-                    f"({result['total_schedules']} schedules)"
-                )
+                print(f"✓ {result['filename']}: {result['route']}-{result['station']} ")
             else:
                 failed += 1
                 print(f"✗ {result['filename']}: {result.get('error', 'Unknown error')}")
