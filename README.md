@@ -59,7 +59,7 @@ timetables 里面有若干张图片（.jpg/.png），每张一个站的列车时
 
 ```python
 from ocrmac import ocrmac
-annotations = ocrmac.OCR('timetables/1号-八宝山站-1.jpg', framework="livetext").recognize()
+annotations = ocrmac.OCR('timetables/1-八宝山-1.jpg', framework="livetext").recognize()
 print(annotations)
 # Output (Text, Confidence, BoundingBox):
 # [("GitHub: Let's build from here - X", 0.5, [0.16, 0.91, 0.17, 0.01]),
@@ -69,12 +69,13 @@ print(annotations)
 # ('P&G U TELUS', 0.5, [0.64, 0.16, 0.22, 0.03])]
 ```
 
-首先按行对字符分组
+首先按行对字符分组。标准为：如果BoundingBox第二个坐标和上一个字符相差不超过 eps=1e-2，则认为在同一行。
 
 然后提取：
 - 终点站：匹配 “开往XXX方向”，提取 XXX
 - 运营时间：匹配 “工作日” 或 “双休日”
-- 具体时刻：
+- 具体时刻：如果一行第一个数字为 4、5...23，则提取该行后面的数字
+  - 例如，某行为 5 03 06 ...，则返回 "5:03" "5:06"...
+- 线路和站名从文件名提取 "线路-站名-*.<扩展名>"
 
-
-
+最后将结果写入一个 jsonl 文件，每行对应一个图片
