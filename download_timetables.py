@@ -33,8 +33,7 @@ class SubwayTimetableDownloader:
             }
         )
         self.url_log_file = self.output_dir / "downloaded_urls.txt"
-        self.url_log = open(self.url_log_file, "w", encoding="utf-8")
-        self.url_log_lock = threading.Lock()
+        self.url_log = open(self.url_log_file, "a", encoding="utf-8")
 
     def download_image(self, url, filename):
         """Download an image from URL and save with given filename"""
@@ -50,9 +49,7 @@ class SubwayTimetableDownloader:
                     f.write(chunk)
 
             # Log URL and filename (thread-safe)
-            with self.url_log_lock:
-                self.url_log.write(f"{filename}\t{url}\n")
-                self.url_log.flush()
+            self.url_log.write(f"{filename}\t{url}\n")
 
             logger.info(f"Downloaded: {filename}")
             return True
@@ -89,8 +86,20 @@ class SubwayTimetableDownloader:
                     # Extract station name from image filename
                     filename_parts = src.split("/")[-1].split("-")
                     if len(filename_parts) >= 2:
-                        line_name = filename_parts[0].replace("线", "")
+                        line_name = (
+                            filename_parts[0].replace("号线", "").replace("线", "")
+                        )
                         station_name = filename_parts[1]
+                        if station_name.endswith("站") and station_name not in [
+                            "朝阳站",
+                            "清河站",
+                            "丰台站",
+                            "北京站",
+                            "北京西站",
+                            "北京南站",
+                            "亦庄火车站",
+                        ]:
+                            station_name = station_name[:-1]
                         img_count += 1
 
                         filename = f"{line_name}-{station_name}-{img_count}.jpg"
@@ -146,9 +155,11 @@ class SubwayTimetableDownloader:
         try:
             # Create a new session for this thread
             session = requests.Session()
-            session.headers.update({
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-            })
+            session.headers.update(
+                {
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+                }
+            )
 
             # Add #schedule fragment to URL
             schedule_url = station_url + "#schedule"
@@ -251,7 +262,7 @@ class SubwayTimetableDownloader:
         logger.info("Starting Beijing Rail Operations download...")
 
         # Line mapping
-        lines = {24: "燕房线", 26: "房山线", 16: "机场线"}
+        lines = {24: "燕房线", 26: "大兴机场线", 16: "19号线"}
         all_image_data = []
 
         # Collect all image data first
@@ -265,28 +276,38 @@ class SubwayTimetableDownloader:
                 )
                 soup = BeautifulSoup(response.content, "html.parser")
 
-                # Find all timetable images
-                img_count = 0
-                for img in soup.find_all("img"):
-                    src = img.get("src", "")
-                    if "bii.com.cn/file/" in src and (".jpg" in src or ".png" in src):
-                        if not src.startswith("http"):
-                            img_url = urljoin("https://www.bii.com.cn", src)
-                        else:
-                            img_url = src
+                # Find the mod-roads div and search for images within it
+                mod_roads_div = soup.find("div", class_="mod-roads")
+                if mod_roads_div:
+                    station_img_counts = {}  # Track image count per station
 
-                        # Try to extract station name from surrounding text or alt text
-                        station_name = "unknown"
-                        alt_text = img.get("alt", "")
-                        if alt_text:
-                            # Try to extract station name from alt text
-                            match = re.search(r"([^-\s]+)站", alt_text)
-                            if match:
-                                station_name = match.group(1)
+                    for img in mod_roads_div.find_all("img"):
+                        src = img.get("src", "")
+                        if "bii.com.cn/file/" in src and (
+                            ".jpg" in src or ".png" in src
+                        ):
+                            if not src.startswith("http"):
+                                img_url = urljoin("https://www.bii.com.cn", src)
+                            else:
+                                img_url = src
 
-                        img_count += 1
-                        filename = f"{line_name}-{station_name}-{img_count}.png"
-                        all_image_data.append((img_url, filename))
+                            # Try to extract station name from surrounding text or alt text
+                            station_name = "unknown"
+                            alt_text = img.get("alt", "")
+                            if alt_text:
+                                station_name = alt_text
+
+                            # Get or initialize count for this station
+                            if station_name not in station_img_counts:
+                                station_img_counts[station_name] = 0
+                            station_img_counts[station_name] += 1
+
+                            filename = f"{line_name}-{station_name}-{station_img_counts[station_name]}.png"
+                            all_image_data.append((img_url, filename))
+                else:
+                    logger.warning(
+                        f"No mod-roads div found for {line_name} (ID: {line_id})"
+                    )
 
             except Exception as e:
                 logger.error(f"Error processing line {line_id}: {e}")
