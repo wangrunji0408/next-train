@@ -140,8 +140,8 @@ def convert_and_binarize_image(image_path: str) -> str:
     filename = Path(image_path).stem
     png_path = png_dir / f"{filename}.png"
 
-    # if png_path.exists():
-    #     return str(png_path)
+    if png_path.exists():
+        return str(png_path)
 
     with Image.open(image_path) as img:
         # Convert CMYK to RGB if necessary
@@ -157,7 +157,7 @@ def convert_and_binarize_image(image_path: str) -> str:
 
         # Apply binarization
         img_array = np.array(img)
-        threshold = 128
+        threshold = 64
 
         # Apply threshold
         binary_array = (img_array > threshold).astype(np.uint8) * 255
