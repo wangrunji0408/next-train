@@ -100,7 +100,10 @@ def extract_schedule_times(lines: List[List[str]]) -> List[str]:
             if line_text[0] in "456789":
                 hour = int(line_text[0])
                 line_text = line_text[1:]  # Remove hour from text
-            elif line_text[0:2] in [str(x) for x in range(10, 24)]:
+            elif (
+                line_text[0:2] in [str(x) for x in range(10, 24)]
+                or line_text[0:2] == "00"
+            ):
                 hour = int(line_text[0:2])
                 line_text = line_text[2:]  # Remove hour from text
 
@@ -157,7 +160,7 @@ def convert_and_binarize_image(image_path: str) -> str:
 
         # Apply binarization
         img_array = np.array(img)
-        threshold = 64
+        threshold = 96
 
         # Apply threshold
         binary_array = (img_array > threshold).astype(np.uint8) * 255
@@ -282,30 +285,25 @@ def main():
         }
 
         # Process completed tasks
-        for future in as_completed(future_to_path):
-            image_path = future_to_path[future]
-            result = future.result()
-            results.append(result)
+        with open(output_file, "w", encoding="utf-8") as f:
+            for future in as_completed(future_to_path):
+                result = future.result()
+                f.write(json.dumps(result, ensure_ascii=False) + "\n")
 
-            if result["status"] == "success":
-                successful += 1
-                print(f"✓ {result['filename']}: {result['route']}-{result['station']} ")
-            else:
-                failed += 1
-                print(f"✗ {result['filename']}: {result.get('error', 'Unknown error')}")
-
-    # Sort results by filename for consistent output
-    results.sort(key=lambda x: x["filename"])
-
-    # Write results to JSONL
-    with open(output_file, "w", encoding="utf-8") as f:
-        for result in results:
-            f.write(json.dumps(result, ensure_ascii=False) + "\n")
+                if result["status"] == "success":
+                    successful += 1
+                    print(
+                        f"✓ {result['filename']}: {result['route']}-{result['station']} "
+                    )
+                else:
+                    failed += 1
+                    print(
+                        f"✗ {result['filename']}: {result.get('error', 'Unknown error')}"
+                    )
 
     print(f"\nResults written to {output_file}")
     print(f"Successfully processed: {successful}")
     print(f"Failed: {failed}")
-    print(f"Total: {len(results)}")
 
 
 if __name__ == "__main__":
