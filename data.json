@@ -1,0 +1,270 @@
+{
+  "stations": [
+    {
+      "id": "1",
+      "name": "国贸",
+      "lat": 39.909186,
+      "lng": 116.447428,
+      "lines": [
+        {
+          "lineId": "1",
+          "lineName": "1号线",
+          "lineColor": "#c23a2b",
+          "directions": [
+            {
+              "direction": "苹果园方向",
+              "schedule": {
+                "weekday": {
+                  "first": "05:10",
+                  "last": "23:55",
+                  "intervals": [
+                    { "start": "05:10", "end": "07:00", "interval": 8 },
+                    { "start": "07:00", "end": "09:00", "interval": 3 },
+                    { "start": "09:00", "end": "17:00", "interval": 5 },
+                    { "start": "17:00", "end": "19:30", "interval": 3 },
+                    { "start": "19:30", "end": "23:55", "interval": 6 }
+                  ]
+                }
+              }
+            },
+            {
+              "direction": "四惠东方向",
+              "schedule": {
+                "weekday": {
+                  "first": "05:15",
+                  "last": "23:50",
+                  "intervals": [
+                    { "start": "05:15", "end": "07:00", "interval": 8 },
+                    { "start": "07:00", "end": "09:00", "interval": 3 },
+                    { "start": "09:00", "end": "17:00", "interval": 5 },
+                    { "start": "17:00", "end": "19:30", "interval": 3 },
+                    { "start": "19:30", "end": "23:50", "interval": 6 }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "lineId": "10",
+          "lineName": "10号线",
+          "lineColor": "#009639",
+          "directions": [
+            {
+              "direction": "内环",
+              "schedule": {
+                "weekday": {
+                  "first": "05:20",
+                  "last": "22:50",
+                  "intervals": [
+                    { "start": "05:20", "end": "07:00", "interval": 8 },
+                    { "start": "07:00", "end": "09:00", "interval": 4 },
+                    { "start": "09:00", "end": "17:00", "interval": 6 },
+                    { "start": "17:00", "end": "19:30", "interval": 4 },
+                    { "start": "19:30", "end": "22:50", "interval": 7 }
+                  ]
+                }
+              }
+            },
+            {
+              "direction": "外环",
+              "schedule": {
+                "weekday": {
+                  "first": "05:25",
+                  "last": "22:45",
+                  "intervals": [
+                    { "start": "05:25", "end": "07:00", "interval": 8 },
+                    { "start": "07:00", "end": "09:00", "interval": 4 },
+                    { "start": "09:00", "end": "17:00", "interval": 6 },
+                    { "start": "17:00", "end": "19:30", "interval": 4 },
+                    { "start": "19:30", "end": "22:45", "interval": 7 }
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "2",
+      "name": "三里屯",
+      "lat": 39.936675,
+      "lng": 116.452361,
+      "lines": [
+        {
+          "lineId": "10",
+          "lineName": "10号线",
+          "lineColor": "#009639",
+          "directions": [
+            {
+              "direction": "内环",
+              "schedule": {
+                "weekday": {
+                  "first": "05:25",
+                  "last": "22:55",
+                  "intervals": [
+                    { "start": "05:25", "end": "07:00", "interval": 8 },
+                    { "start": "07:00", "end": "09:00", "interval": 4 },
+                    { "start": "09:00", "end": "17:00", "interval": 6 },
+                    { "start": "17:00", "end": "19:30", "interval": 4 },
+                    { "start": "19:30", "end": "22:55", "interval": 7 }
+                  ]
+                }
+              }
+            },
+            {
+              "direction": "外环",
+              "schedule": {
+                "weekday": {
+                  "first": "05:30",
+                  "last": "22:50",
+                  "intervals": [
+                    { "start": "05:30", "end": "07:00", "interval": 8 },
+                    { "start": "07:00", "end": "09:00", "interval": 4 },
+                    { "start": "09:00", "end": "17:00", "interval": 6 },
+                    { "start": "17:00", "end": "19:30", "interval": 4 },
+                    { "start": "19:30", "end": "22:50", "interval": 7 }
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "3",
+      "name": "望京",
+      "lat": 39.996427,
+      "lng": 116.470879,
+      "lines": [
+        {
+          "lineId": "14",
+          "lineName": "14号线",
+          "lineColor": "#d4a574",
+          "directions": [
+            {
+              "direction": "张郭庄方向",
+              "schedule": {
+                "weekday": {
+                  "first": "05:30",
+                  "last": "23:00",
+                  "intervals": [
+                    { "start": "05:30", "end": "07:00", "interval": 10 },
+                    { "start": "07:00", "end": "09:00", "interval": 5 },
+                    { "start": "09:00", "end": "17:00", "interval": 8 },
+                    { "start": "17:00", "end": "19:30", "interval": 5 },
+                    { "start": "19:30", "end": "23:00", "interval": 8 }
+                  ]
+                }
+              }
+            },
+            {
+              "direction": "善各庄方向",
+              "schedule": {
+                "weekday": {
+                  "first": "05:35",
+                  "last": "22:55",
+                  "intervals": [
+                    { "start": "05:35", "end": "07:00", "interval": 10 },
+                    { "start": "07:00", "end": "09:00", "interval": 5 },
+                    { "start": "09:00", "end": "17:00", "interval": 8 },
+                    { "start": "17:00", "end": "19:30", "interval": 5 },
+                    { "start": "19:30", "end": "22:55", "interval": 8 }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "lineId": "15",
+          "lineName": "15号线",
+          "lineColor": "#754c29",
+          "directions": [
+            {
+              "direction": "俸伯方向",
+              "schedule": {
+                "weekday": {
+                  "first": "05:40",
+                  "last": "22:40",
+                  "intervals": [
+                    { "start": "05:40", "end": "07:00", "interval": 12 },
+                    { "start": "07:00", "end": "09:00", "interval": 6 },
+                    { "start": "09:00", "end": "17:00", "interval": 10 },
+                    { "start": "17:00", "end": "19:30", "interval": 6 },
+                    { "start": "19:30", "end": "22:40", "interval": 10 }
+                  ]
+                }
+              }
+            },
+            {
+              "direction": "清华东路西口方向",
+              "schedule": {
+                "weekday": {
+                  "first": "05:45",
+                  "last": "22:35",
+                  "intervals": [
+                    { "start": "05:45", "end": "07:00", "interval": 12 },
+                    { "start": "07:00", "end": "09:00", "interval": 6 },
+                    { "start": "09:00", "end": "17:00", "interval": 10 },
+                    { "start": "17:00", "end": "19:30", "interval": 6 },
+                    { "start": "19:30", "end": "22:35", "interval": 10 }
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "4",
+      "name": "中关村",
+      "lat": 39.983456,
+      "lng": 116.303497,
+      "lines": [
+        {
+          "lineId": "4",
+          "lineName": "4号线",
+          "lineColor": "#009639",
+          "directions": [
+            {
+              "direction": "安河桥北方向",
+              "schedule": {
+                "weekday": {
+                  "first": "05:00",
+                  "last": "23:10",
+                  "intervals": [
+                    { "start": "05:00", "end": "07:00", "interval": 8 },
+                    { "start": "07:00", "end": "09:00", "interval": 3 },
+                    { "start": "09:00", "end": "17:00", "interval": 5 },
+                    { "start": "17:00", "end": "19:30", "interval": 3 },
+                    { "start": "19:30", "end": "23:10", "interval": 6 }
+                  ]
+                }
+              }
+            },
+            {
+              "direction": "天宫院方向",
+              "schedule": {
+                "weekday": {
+                  "first": "05:05",
+                  "last": "23:05",
+                  "intervals": [
+                    { "start": "05:05", "end": "07:00", "interval": 8 },
+                    { "start": "07:00", "end": "09:00", "interval": 3 },
+                    { "start": "09:00", "end": "17:00", "interval": 5 },
+                    { "start": "17:00", "end": "19:30", "interval": 3 },
+                    { "start": "19:30", "end": "23:05", "interval": 6 }
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
