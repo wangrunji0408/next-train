@@ -65,7 +65,7 @@ def extract_destination(lines: List[List[str]]) -> Optional[str]:
     """
     for line in lines:
         line_text = "".join(line)
-        match = re.search(r"开往(.+?)站?方向", line_text)
+        match = re.search(r"[开牙去][往住]?(.+?)站?(方向)?(To)?", line_text)
         if match:
             return match.group(1).strip()
     return None
@@ -77,10 +77,14 @@ def extract_operating_time(lines: List[List[str]]) -> Optional[str]:
     """
     for line in lines:
         line_text = "".join(line)
-        if "工作日" in line_text:
+        if "作日" in line_text or "Weekdays" in line_text:
             return "工作日"
-        elif "双休日" in line_text:
+        elif "双休日" in line_text or "Weekends" in line_text:
             return "双休日"
+        elif "平日" in line_text or "Ordinary" in line_text:
+            return "平日"
+        elif "星期五" in line_text or "周五" in line_text or "Friday" in line_text:
+            return "星期五"
     return None
 
 
@@ -183,7 +187,7 @@ def convert_and_binarize_image(image_path: str) -> List[Image.Image]:
             img = img.convert("L")
 
         width, height = img.size
-        
+
         # Resize if longest side exceeds 8192 pixels
         max_side = max(width, height)
         if max_side > 8192:
