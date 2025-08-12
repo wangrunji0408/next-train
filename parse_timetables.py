@@ -12,6 +12,8 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 import numpy as np
 from ocrmac import ocrmac
 from PIL import Image
+from thefuzz import fuzz
+from functools import partial
 
 
 def group_text_by_lines(annotations: List[Tuple], eps: float = 2e-2) -> List[List[str]]:
@@ -65,7 +67,7 @@ def extract_destination(lines: List[List[str]]) -> Optional[str]:
     """
     for line in lines:
         line_text = "".join(line)
-        match = re.search(r"[开牙去][往住]?(.+?)站?(方向|To)", line_text)
+        match = re.search(r"[开牙去][往住注]?(.+?)站?(方向|To)", line_text)
         if match:
             return match.group(1).strip()
     return None
@@ -243,7 +245,55 @@ def extract_route_and_station(filename: str) -> Tuple[Optional[str], Optional[st
     return None, None
 
 
-def parse_timetable_image(image_path: str) -> List[Dict]:
+def parse_station_names_from_files(image_files: List[Path]) -> Dict[str, List[str]]:
+    """Parse station names from image files and group by route"""
+    route_stations = {"首都机场": ["首都机场"], "1": ["环球度假区"], "八通": ["古城"]}
+
+    for image_path in image_files:
+        route, station = extract_route_and_station(str(image_path))
+        if route and station:
+            if route not in route_stations:
+                route_stations[route] = []
+            if station not in route_stations[route]:
+                route_stations[route].append(station)
+
+    return route_stations
+
+
+def auto_correct_destination(
+    destination: str,
+    route: str,
+    route_stations: Dict[str, List[str]],
+) -> str:
+    """Auto-correct destination name to the closest station in the same route"""
+    if not destination or not route or route not in route_stations:
+        return destination
+
+    station_list = route_stations[route]
+    if not station_list:
+        return destination
+
+    # Normal processing for other routes
+    # Check for exact match first
+    if destination in station_list:
+        return destination
+
+    # Find the best match (closest station)
+    best_match = destination
+    best_score = 0
+
+    for station in station_list:
+        score = fuzz.ratio(destination, station)
+        if score > best_score:
+            best_score = score
+            best_match = station
+
+    return best_match
+
+
+def parse_timetable_image(
+    image_path: str, route_stations: Dict[str, List[str]] = None
+) -> List[Dict]:
     """
     Parse a single timetable image and extract all information
     Returns list of results (multiple if image was split)
@@ -276,6 +326,18 @@ def parse_timetable_image(image_path: str) -> List[Dict]:
             destination = extract_destination(lines_gray)
             operating_time = extract_operating_time(lines_gray)
 
+            # Auto-correct destination using route stations
+            route, station = extract_route_and_station(image_path)
+            if route_stations and route and destination:
+                corrected_destination = auto_correct_destination(
+                    destination, route, route_stations
+                )
+                if corrected_destination != destination:
+                    print(
+                        f"Auto-corrected destination: '{destination}' -> '{corrected_destination}'"
+                    )
+                destination = corrected_destination
+
             # Perform OCR on binary image for schedule_times
             ocr_binary = ocrmac.OCR(binary_img, framework="livetext")
             annotations_binary = ocr_binary.recognize()
@@ -286,7 +348,6 @@ def parse_timetable_image(image_path: str) -> List[Dict]:
 
             # Extract schedule_times from binary
             schedule_times = extract_schedule_times(lines_binary)
-            route, station = extract_route_and_station(image_path)
 
             # Debug
             print(
@@ -356,6 +417,11 @@ def main():
 
     print(f"Found {len(image_files)} image files to process")
 
+    # Parse station names from filenames to build reference for auto-correction
+    print("Building station reference from filenames...")
+    route_stations = parse_station_names_from_files(image_files)
+    print(f"Found stations for {len(route_stations)} routes")
+
     # # Filter to keep first 4 files per route for testing
     # route_images = {}
     # for image_path in sorted(image_files):
@@ -376,9 +442,12 @@ def main():
     with ProcessPoolExecutor(max_workers=max_workers) as executor, open(
         output_file, "w", encoding="utf-8"
     ) as fout:
+        # Create partial function with route_stations
+        parse_func = partial(parse_timetable_image, route_stations=route_stations)
+
         # Submit all tasks
         future_to_path = {
-            executor.submit(parse_timetable_image, str(image_path)): image_path
+            executor.submit(parse_func, str(image_path)): image_path
             for image_path in sorted(image_files)
         }
 
