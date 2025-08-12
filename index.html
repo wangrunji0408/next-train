@@ -17,6 +17,7 @@
             min-height: 100vh;
             padding: 20px;
             color: white;
+            overflow-x: hidden;
         }
 
         .container {
@@ -67,12 +68,15 @@
         .line-btn {
             background: rgba(255, 255, 255, 0.2);
             border: none;
-            border-radius: 25px;
-            padding: 10px 20px;
+            border-radius: 4px;
+            padding: 8px 16px;
             color: white;
             font-size: 14px;
+            font-weight: 500;
             cursor: pointer;
             transition: all 0.3s ease;
+            position: relative;
+            min-width: 50px;
         }
 
         .line-btn.active {
@@ -112,24 +116,75 @@
             border-radius: 20px;
             padding: 30px;
             text-align: center;
+            position: relative;
+            transition: all 0.3s ease;
+        }
+
+        .next-train:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .click-indicators {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .next-train:hover .click-indicators {
+            opacity: 0.7;
+        }
+
+        .click-indicator {
+            font-size: 30px;
+            color: white;
+            padding: 10px 15px;
+            margin: 0 15px;
+            cursor: pointer;
+            pointer-events: all;
+            transition: all 0.2s ease;
+            user-select: none;
+        }
+
+        .click-indicator:hover {
+            transform: scale(1.2);
+            text-shadow: 0 0 10px rgba(255, 255, 255, 0.8);
+        }
+
+        .click-indicator:active {
+            transform: scale(0.9);
         }
 
         .train-time {
             font-size: 48px;
             font-weight: 200;
             margin-bottom: 10px;
+            transition: all 0.3s ease;
+        }
+
+        .train-time.departed {
+            opacity: 0.5;
+            text-decoration: line-through;
         }
 
         .countdown {
             font-size: 18px;
             opacity: 0.9;
             margin-bottom: 15px;
+            transition: all 0.3s ease;
         }
 
-        .train-info {
-            font-size: 14px;
-            opacity: 0.7;
+        .countdown.departed {
+            color: #ff6b6b;
+            font-weight: 600;
         }
+
 
         .loading {
             text-align: center;
@@ -207,6 +262,22 @@
             background: rgba(255, 255, 255, 0.2);
         }
 
+        /* Mobile specific styles */
+        @media screen and (max-width: 600px) {
+            html, body {
+                overflow-x: hidden;
+                touch-action: pan-y;
+            }
+            
+            body {
+                padding: 15px;
+            }
+
+            .click-indicators {
+                opacity: 0.5;
+            }
+        }
+
     </style>
 </head>
 <body>
@@ -242,9 +313,12 @@
             <div class="direction-selector" id="directionSelector"></div>
 
             <div class="next-train">
+                <div class="click-indicators">
+                    <div class="click-indicator left">‹</div>
+                    <div class="click-indicator right">›</div>
+                </div>
                 <div class="train-time" id="trainTime">--:--</div>
                 <div class="countdown" id="countdown" data-i18n="calculating">计算中...</div>
-                <div class="train-info" id="trainInfo"></div>
             </div>
         </div>
     </div>

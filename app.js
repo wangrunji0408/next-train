@@ -6,6 +6,7 @@ class NextTrainApp {
         this.selectedLine = null;
         this.selectedDirection = null;
         this.countdownInterval = null;
+        this.currentTrainIndex = 0;
 
         this.loadingEl = document.getElementById('loading');
         this.errorEl = document.getElementById('error');
@@ -16,7 +17,6 @@ class NextTrainApp {
         this.directionSelectorEl = document.getElementById('directionSelector');
         this.trainTimeEl = document.getElementById('trainTime');
         this.countdownEl = document.getElementById('countdown');
-        this.trainInfoEl = document.getElementById('trainInfo');
         this.sortByDistanceBtnEl = document.getElementById('sortByDistanceBtn');
         this.inputStationBtnEl = document.getElementById('inputStationBtn');
         this.languageSelectorEl = document.getElementById('languageSelector');
@@ -275,6 +275,7 @@ class NextTrainApp {
         this.nearestStation = nearest;
         this.selectedLine = nearest.lines[0];
         this.selectedDirection = nearest.lines[0].directions[0];
+        this.currentTrainIndex = this.getNextTrainIndex();
     }
 
     setupUI() {
@@ -290,6 +291,24 @@ class NextTrainApp {
         // 设置按钮事件监听器
         this.sortByDistanceBtnEl.onclick = () => this.showStationSelector();
         this.inputStationBtnEl.onclick = () => this.showStationInput();
+        
+        // 设置倒计时框点击事件
+        this.setupClickGestures();
+    }
+
+    setupClickGestures() {
+        const leftArrow = document.querySelector('.click-indicator.left');
+        const rightArrow = document.querySelector('.click-indicator.right');
+        
+        leftArrow.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.showPreviousTrain();
+        });
+        
+        rightArrow.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.showNextTrain();
+        });
     }
 
     updateStationDisplay() {
@@ -309,15 +328,23 @@ class NextTrainApp {
             // Apply different styles for selected vs unselected lines
             if (line.lineColor && line.lineColor !== null) {
                 if (line.lineName === this.selectedLine.lineName) {
-                    // Selected line: filled with color
+                    // Selected line: brighter color + glow effect + scale
                     btn.style.backgroundColor = line.lineColor;
                     btn.style.color = '#ffffff';
-                    btn.style.border = `3px solid ${line.lineColor}`;
+                    btn.style.border = 'none';
+                    btn.style.transform = 'scale(1.15)';
+                    btn.style.boxShadow = `0 0 20px ${line.lineColor}, 0 4px 15px rgba(0,0,0,0.3)`;
+                    btn.style.filter = 'brightness(1.2) saturate(1.1)';
+                    btn.style.zIndex = '10';
                 } else {
-                    // Unselected line: only thick border, no fill
-                    btn.style.backgroundColor = 'transparent';
+                    // Unselected line: normal color with subtle shadow
+                    btn.style.backgroundColor = line.lineColor;
                     btn.style.color = '#ffffff';
-                    btn.style.border = `3px solid ${line.lineColor}`;
+                    btn.style.border = 'none';
+                    btn.style.transform = 'scale(1)';
+                    btn.style.boxShadow = '0 2px 8px rgba(0,0,0,0.2)';
+                    btn.style.filter = 'brightness(0.9)';
+                    btn.style.zIndex = '1';
                 }
             }
 
@@ -343,6 +370,7 @@ class NextTrainApp {
     selectLine(line) {
         this.selectedLine = line;
         this.selectedDirection = line.directions[0];
+        this.currentTrainIndex = this.getNextTrainIndex(); // Set to next train when changing line
         this.renderLineSelector();
         this.renderDirectionSelector();
         this.updateTrainInfo();
@@ -350,22 +378,92 @@ class NextTrainApp {
 
     selectDirection(direction) {
         this.selectedDirection = direction;
+        this.currentTrainIndex = this.getNextTrainIndex(); // Set to next train when changing direction
         this.renderDirectionSelector();
         this.updateTrainInfo();
     }
 
+    showPreviousTrain() {
+        const allTrains = this.getAllTrains();
+        if (allTrains.length === 0) return;
+        
+        if (this.currentTrainIndex > 0) {
+            this.currentTrainIndex--;
+        } else {
+            // Cycle to last train
+            this.currentTrainIndex = allTrains.length - 1;
+        }
+        this.updateTrainInfo();
+    }
+
+    showNextTrain() {
+        const allTrains = this.getAllTrains();
+        if (allTrains.length === 0) return;
+        
+        if (this.currentTrainIndex < allTrains.length - 1) {
+            this.currentTrainIndex++;
+        } else {
+            // Cycle to first train
+            this.currentTrainIndex = 0;
+        }
+        this.updateTrainInfo();
+    }
+
     updateTrainInfo() {
-        const nextTrain = this.getNextTrain();
-        if (!nextTrain) {
+        const allTrains = this.getAllTrains();
+        const currentTrain = allTrains[this.currentTrainIndex];
+        
+        if (!currentTrain) {
             this.trainTimeEl.textContent = window.i18n.t('trainTimeDefault');
             this.countdownEl.textContent = window.i18n.t('noService');
-            this.trainInfoEl.textContent = '';
             return;
         }
 
-        this.trainTimeEl.textContent = nextTrain.time;
-        const lineNameTranslated = this.formatLineName(this.selectedLine.route);
-        this.trainInfoEl.textContent = `${lineNameTranslated} · ${this.selectedDirection.direction}`;
+        this.trainTimeEl.textContent = currentTrain.time;
+        
+        // Apply visual styling for departed trains
+        if (currentTrain.isPast) {
+            this.trainTimeEl.classList.add('departed');
+        } else {
+            this.trainTimeEl.classList.remove('departed');
+        }
+    }
+
+    getAllTrains() {
+        const now = new Date();
+        const currentTime = now.getHours() * 60 + now.getMinutes();
+        const times = this.selectedDirection.schedule.weekday.times;
+
+        if (!times || times.length === 0) {
+            return [];
+        }
+
+        // Convert times to minutes and create train objects
+        const trains = times.map(time => {
+            const minutes = this.timeToMinutes(time);
+            return {
+                time: time,
+                minutes: minutes,
+                isPast: minutes <= currentTime
+            };
+        });
+
+        // Sort by time
+        trains.sort((a, b) => a.minutes - b.minutes);
+        
+        return trains;
+    }
+
+    getNextTrainIndex() {
+        const allTrains = this.getAllTrains();
+        const now = new Date();
+        const currentTime = now.getHours() * 60 + now.getMinutes();
+        
+        // Find first train that hasn't departed yet
+        const nextTrainIndex = allTrains.findIndex(train => train.minutes > currentTime);
+        
+        // If no future trains found, default to first train
+        return nextTrainIndex >= 0 ? nextTrainIndex : 0;
     }
 
     getNextTrain() {
@@ -410,8 +508,10 @@ class NextTrainApp {
     }
 
     updateCountdown() {
-        const nextTrain = this.getNextTrain();
-        if (!nextTrain) {
+        const allTrains = this.getAllTrains();
+        const currentTrain = allTrains[this.currentTrainIndex];
+        
+        if (!currentTrain) {
             this.countdownEl.textContent = window.i18n.t('noService');
             return;
         }
@@ -420,17 +520,22 @@ class NextTrainApp {
         const currentMinutes = now.getHours() * 60 + now.getMinutes();
         const currentSeconds = now.getSeconds();
 
-        const timeDiff = nextTrain.minutes - currentMinutes;
+        const timeDiff = currentTrain.minutes - currentMinutes;
 
         if (timeDiff < 0) {
-            this.updateTrainInfo();
+            this.countdownEl.textContent = window.i18n.t('trainDeparted');
+            this.countdownEl.classList.add('departed');
             return;
         }
+
+        // Remove departed class for active trains
+        this.countdownEl.classList.remove('departed');
 
         if (timeDiff === 0) {
             const secondsLeft = 60 - currentSeconds;
             if (secondsLeft <= 0) {
-                this.updateTrainInfo();
+                this.countdownEl.textContent = window.i18n.t('trainDeparted');
+                this.countdownEl.classList.add('departed');
                 return;
             }
             this.countdownEl.textContent = window.i18n.t('departsInSeconds', { seconds: secondsLeft });
@@ -497,6 +602,7 @@ class NextTrainApp {
         this.nearestStation.distance = 0; // 手动选择时不显示距离
         this.selectedLine = this.nearestStation.lines[0];
         this.selectedDirection = this.nearestStation.lines[0].directions[0];
+        this.currentTrainIndex = this.getNextTrainIndex();
 
         this.setupUI();
         this.startCountdown();
@@ -608,6 +714,7 @@ class NextTrainApp {
 
         this.selectedLine = this.nearestStation.lines[0];
         this.selectedDirection = this.nearestStation.lines[0].directions[0];
+        this.currentTrainIndex = this.getNextTrainIndex();
 
         this.errorEl.style.display = 'none';
         this.appEl.style.display = 'block';
