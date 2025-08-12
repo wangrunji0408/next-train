@@ -20,7 +20,6 @@ class NextTrainApp {
         this.sortByDistanceBtnEl = document.getElementById('sortByDistanceBtn');
         this.inputStationBtnEl = document.getElementById('inputStationBtn');
         this.languageSelectorEl = document.getElementById('languageSelector');
-        this.languageDropdownEl = document.getElementById('languageDropdown');
         this.currentLanguageEl = document.getElementById('currentLanguage');
 
         this.setupLanguageSelector();
@@ -110,24 +109,11 @@ class NextTrainApp {
     }
 
     setupLanguageSelector() {
-        // Set up language selector
-        this.languageSelectorEl.addEventListener('click', (e) => {
-            e.stopPropagation();
-            this.languageDropdownEl.classList.toggle('show');
-        });
-
-        // Handle language option clicks
-        this.languageDropdownEl.addEventListener('click', (e) => {
-            if (e.target.classList.contains('language-option')) {
-                const lang = e.target.dataset.lang;
-                window.i18n.setLanguage(lang);
-                this.languageDropdownEl.classList.remove('show');
-            }
-        });
-
-        // Close dropdown when clicking outside
-        document.addEventListener('click', () => {
-            this.languageDropdownEl.classList.remove('show');
+        // Set up language selector - direct toggle between zh and en
+        this.languageSelectorEl.addEventListener('click', () => {
+            const currentLang = window.i18n.getCurrentLanguage();
+            const newLang = currentLang === 'zh' ? 'en' : 'zh';
+            window.i18n.setLanguage(newLang);
         });
 
         // Listen for language changes
@@ -148,11 +134,6 @@ class NextTrainApp {
             'en': '🌐 English'
         };
         this.currentLanguageEl.textContent = langMap[currentLang];
-
-        // Update active state
-        this.languageDropdownEl.querySelectorAll('.language-option').forEach(option => {
-            option.classList.toggle('active', option.dataset.lang === currentLang);
-        });
     }
 
     translateUI() {
@@ -325,15 +306,18 @@ class NextTrainApp {
             const btn = document.createElement('button');
             btn.className = `line-btn ${line.lineName === this.selectedLine.lineName ? 'active' : ''}`;
             
-            // Always apply lineColor as background, with fallback transparency for inactive buttons
+            // Apply different styles for selected vs unselected lines
             if (line.lineColor && line.lineColor !== null) {
                 if (line.lineName === this.selectedLine.lineName) {
+                    // Selected line: filled with color
                     btn.style.backgroundColor = line.lineColor;
                     btn.style.color = '#ffffff';
+                    btn.style.border = `3px solid ${line.lineColor}`;
                 } else {
-                    btn.style.backgroundColor = line.lineColor + '80'; // Add transparency
+                    // Unselected line: only thick border, no fill
+                    btn.style.backgroundColor = 'transparent';
                     btn.style.color = '#ffffff';
-                    btn.style.border = `2px solid ${line.lineColor}`;
+                    btn.style.border = `3px solid ${line.lineColor}`;
                 }
             }
             
@@ -445,7 +429,7 @@ class NextTrainApp {
 
         if (timeDiff === 0) {
             const secondsLeft = 60 - currentSeconds;
-            if (secondsLeft <= 0) {
+            if (secondsLeft <= 0 || currentSeconds === 0) {
                 this.updateTrainInfo();
                 return;
             }

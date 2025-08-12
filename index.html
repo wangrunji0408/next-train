@@ -207,50 +207,11 @@
             background: rgba(255, 255, 255, 0.2);
         }
 
-        .language-dropdown {
-            position: absolute;
-            top: 100%;
-            right: 0;
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(10px);
-            border-radius: 10px;
-            margin-top: 5px;
-            min-width: 120px;
-            box-shadow: 0 5px 20px rgba(0, 0, 0, 0.2);
-            display: none;
-            z-index: 2001;
-        }
-
-        .language-dropdown.show {
-            display: block;
-        }
-
-        .language-option {
-            padding: 10px 15px;
-            color: #333;
-            cursor: pointer;
-            transition: background-color 0.2s ease;
-            border-radius: 8px;
-            margin: 2px;
-        }
-
-        .language-option:hover {
-            background: rgba(0, 0, 0, 0.1);
-        }
-
-        .language-option.active {
-            background: rgba(0, 0, 0, 0.1);
-            font-weight: 600;
-        }
     </style>
 </head>
 <body>
     <div class="language-selector" id="languageSelector">
         <span id="currentLanguage">🌐 中文</span>
-        <div class="language-dropdown" id="languageDropdown">
-            <div class="language-option" data-lang="zh">🇨🇳 中文</div>
-            <div class="language-option" data-lang="en">🇺🇸 English</div>
-        </div>
     </div>
 
     <div class="container">
