@@ -262,7 +262,7 @@ class SubwayTimetableDownloader:
         logger.info("Starting Beijing Rail Operations download...")
 
         # Line mapping
-        lines = {24: "燕房线", 26: "大兴机场线", 16: "19号线"}
+        lines = {24: "燕房", 26: "大兴机场", 16: "19"}
         all_image_data = []
 
         # Collect all image data first

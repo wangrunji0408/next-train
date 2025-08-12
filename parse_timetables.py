@@ -14,7 +14,7 @@ from ocrmac import ocrmac
 from PIL import Image
 
 
-def group_text_by_lines(annotations: List[Tuple], eps: float = 1e-2) -> List[List[str]]:
+def group_text_by_lines(annotations: List[Tuple], eps: float = 2e-2) -> List[List[str]]:
     """
     Group OCR annotations by lines based on y-coordinate proximity.
 
@@ -29,7 +29,7 @@ def group_text_by_lines(annotations: List[Tuple], eps: float = 1e-2) -> List[Lis
         return []
 
     # Sort by y-coordinate (second element of bbox)
-    sorted_annotations = sorted(annotations, key=lambda x: x[2][1])
+    sorted_annotations = sorted(annotations, key=lambda x: -x[2][1])
 
     lines = []
     current_line = [sorted_annotations[0]]
@@ -65,7 +65,7 @@ def extract_destination(lines: List[List[str]]) -> Optional[str]:
     """
     for line in lines:
         line_text = "".join(line)
-        match = re.search(r"开往(.+?)方向", line_text)
+        match = re.search(r"开往(.+?)站?方向", line_text)
         if match:
             return match.group(1).strip()
     return None
@@ -84,30 +84,53 @@ def extract_operating_time(lines: List[List[str]]) -> Optional[str]:
     return None
 
 
+def replace_circle_number(s: str) -> str:
+    s = s.replace("①", "1")
+    s = s.replace("②", "2")
+    s = s.replace("③", "3")
+    s = s.replace("④", "4")
+    s = s.replace("⑤", "5")
+    s = s.replace("⑥", "6")
+    s = s.replace("⑦", "7")
+    s = s.replace("⑧", "8")
+    s = s.replace("⑨", "9")
+    return s
+
+
 def extract_schedule_times(lines: List[List[str]]) -> List[str]:
     """
     Extract schedule times from lines starting with hours 4-23
     """
     schedule_times = []
 
+    last_hour = None
     for line in lines:
-        line_text = "".join([c for c in line if c.isnumeric()])
+        line_text = ""
+        for c in line:
+            c = replace_circle_number(c)
+            if c.isnumeric():
+                line_text += c
+
         if not line_text:
             continue
 
         # Check if first number is an hour (4-23)
         try:
-            if "表" in line:
+            if not line[0].isnumeric() or "表" in line or line_text == "520":
                 continue  # skip footer
+            if last_hour is None and not (
+                line_text[0] in "567" or line_text[0:2] in ["05", "06", "07"]
+            ):
+                continue
             if line_text[0] in "456789":
                 hour = int(line_text[0])
                 line_text = line_text[1:]  # Remove hour from text
-            elif (
-                line_text[0:2] in [str(x) for x in range(10, 24)]
-                or line_text[0:2] == "00"
-            ):
+            elif line_text[0:2] in [f"{x:02d}" for x in range(5, 24)] + ["00"]:
                 hour = int(line_text[0:2])
                 line_text = line_text[2:]  # Remove hour from text
+            else:
+                continue
+            last_hour = hour
 
             # Process remaining numbers as minutes
             while len(line_text) >= 2:
@@ -127,6 +150,13 @@ def extract_schedule_times(lines: List[List[str]]) -> List[str]:
     return schedule_times
 
 
+THRESHOLDS = {
+    "燕房": 192,
+    "大兴机场": 128,
+    "19": 128,
+}
+
+
 def convert_and_binarize_image(image_path: str) -> List[Image.Image]:
     """
     Convert image to PNG format, apply binarization for better OCR, and split if tall vertical
@@ -137,6 +167,8 @@ def convert_and_binarize_image(image_path: str) -> List[Image.Image]:
     Returns:
         List of processed images (1 for normal images, 2 for split tall images)
     """
+    line = Path(image_path).stem.split("-")[0]
+    threshold = THRESHOLDS.get(line, 80)
 
     with Image.open(image_path) as img:
         # Convert CMYK to RGB if necessary
@@ -151,9 +183,19 @@ def convert_and_binarize_image(image_path: str) -> List[Image.Image]:
             img = img.convert("L")
 
         width, height = img.size
+        
+        # Resize if longest side exceeds 8192 pixels
+        max_side = max(width, height)
+        if max_side > 8192:
+            # Scale to keep longest side under 4000px
+            scale_factor = 3999 / max_side
+            new_width = int(width * scale_factor)
+            new_height = int(height * scale_factor)
+            img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+            width, height = new_width, new_height
 
-        # Check if image is tall vertical (height/width > 3/2, which is aspect ratio > 2:3)
-        if height / width > 1.5:
+        # Check if image is tall vertical
+        if height / width > 1.5 and Path(image_path).stem.startswith("10"):
             # Split into two equal height parts
             half_height = height // 2
             top_img = img.crop((0, 0, width, half_height))
@@ -166,7 +208,6 @@ def convert_and_binarize_image(image_path: str) -> List[Image.Image]:
         for image in images:
             # Apply binarization
             img_array = np.array(image)
-            threshold = 64
 
             # Apply threshold
             binary_array = (img_array > threshold).astype(np.uint8) * 255
@@ -225,16 +266,20 @@ def parse_timetable_image(image_path: str) -> List[Dict]:
             route, station = extract_route_and_station(image_path)
 
             # Debug
-            # print(f"{route} {station} {destination} {operating_time}")
-            # minutes = {}
-            # for time in schedule_times:
-            #     hour, minute = map(int, time.split(":"))
-            #     minutes[hour] = minutes.get(hour, []) + [minute]
-            # for hour, mins in sorted(minutes.items(), key=lambda x: x[0]):
-            #     print(f"{hour:02}:", end="")
-            #     for minute in mins:
-            #         print(f" {minute:02}", end="")
-            #     print()
+            print(
+                f"线路：{route}, 站名：{station}, 开往：{destination}, 时段：{operating_time}",
+            )
+            minutes = {}
+            for time in schedule_times:
+                hour, minute = map(int, time.split(":"))
+                minutes[hour] = minutes.get(hour, []) + [minute]
+            for hour, mins in sorted(
+                minutes.items(), key=lambda x: 24 if x[0] == 0 else x[0]
+            ):
+                print(f"{hour:02}:", end="")
+                for minute in mins:
+                    print(f" {minute:02}", end="")
+                print()
 
             result = {
                 "filename": os.path.basename(image_path) + suffix,
@@ -287,15 +332,27 @@ def main():
         return
 
     print(f"Found {len(image_files)} image files to process")
+
+    # # Filter to keep first 4 files per route for testing
+    # route_images = {}
+    # for image_path in sorted(image_files):
+    #     route, station = extract_route_and_station(str(image_path))
+    #     if route not in route_images:
+    #         route_images[route] = []
+    #     if len(route_images[route]) < 4:
+    #         route_images[route].append(image_path)
+
+    # image_files = [img for img_list in route_images.values() for img in img_list]
+    # print(f"Filtered to {len(image_files)} images (max 5 per route) for testing")
     print(f"Using {max_workers} parallel workers")
 
     # Process images in parallel
     successful = 0
     failed = 0
 
-    # image_files = [sorted(image_files)[0]]
-
-    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+    with ProcessPoolExecutor(max_workers=max_workers) as executor, open(
+        output_file, "w", encoding="utf-8"
+    ) as fout:
         # Submit all tasks
         future_to_path = {
             executor.submit(parse_timetable_image, str(image_path)): image_path
@@ -303,22 +360,20 @@ def main():
         }
 
         # Process completed tasks
-        with open(output_file, "w", encoding="utf-8") as f:
-            for future in as_completed(future_to_path):
-                results_list = future.result()
-                for result in results_list:
-                    print(json.dumps(result, ensure_ascii=False), file=f)
+        n = len(future_to_path)
+        for i, future in enumerate(as_completed(future_to_path)):
+            results_list = future.result()
+            for result in results_list:
+                print(json.dumps(result, ensure_ascii=False), file=fout)
 
-                    if result["status"] == "success":
-                        successful += 1
-                        print(
-                            f"✓ {result['filename']}: {result['route']}-{result['station']} "
-                        )
-                    else:
-                        failed += 1
-                        print(
-                            f"✗ {result['filename']}: {result.get('error', 'Unknown error')}"
-                        )
+                if result["status"] == "success":
+                    successful += 1
+                    print(f"✅ [{i}/{n}]: {result['filename']}")
+                else:
+                    failed += 1
+                    print(
+                        f"❌ [{i}/{n}]: {result['filename']}: {result.get('error', 'Unknown error')}"
+                    )
 
     print(f"\nResults written to {output_file}")
     print(f"Successfully processed: {successful}")
