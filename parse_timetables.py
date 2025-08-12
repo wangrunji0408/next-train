@@ -393,7 +393,7 @@ def main():
     Process all timetable images in parallel and output to JSONL
     """
     timetables_dir = Path("timetables")
-    output_file = "timetable_schedules.jsonl"
+    output_file = "timetable.jsonl"
     max_workers = 10
 
     if not timetables_dir.exists():

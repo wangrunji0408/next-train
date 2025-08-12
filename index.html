@@ -36,6 +36,7 @@
         }
 
         .station-info {
+            position: relative;
             background: rgba(255, 255, 255, 0.1);
             backdrop-filter: blur(10px);
             border-radius: 20px;
@@ -45,9 +46,9 @@
         }
 
         .station-name {
-            font-size: 24px;
-            font-weight: 500;
-            margin-bottom: 10px;
+            font-size: 32px;
+            font-weight: 600;
+            margin-bottom: 15px;
         }
 
         .distance {
@@ -152,6 +153,38 @@
         .loading {
             animation: pulse 2s infinite;
         }
+
+        .station-name-container {
+            margin-bottom: 15px;
+        }
+
+        .station-controls {
+            position: absolute;
+            right: 15px;
+            bottom: 15px;
+            display: flex;
+            gap: 8px;
+        }
+
+        .station-btn {
+            background: rgba(255, 255, 255, 0.2);
+            border: none;
+            border-radius: 50%;
+            width: 36px;
+            height: 36px;
+            color: white;
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .station-btn:hover {
+            background: rgba(255, 255, 255, 0.4);
+            transform: scale(1.1);
+        }
     </style>
 </head>
 <body>
@@ -168,8 +201,14 @@
 
         <div id="app" style="display: none;">
             <div class="station-info">
-                <div class="station-name" id="stationName"></div>
+                <div class="station-name-container">
+                    <div class="station-name" id="stationName"></div>
+                </div>
                 <div class="distance" id="distance"></div>
+                <div class="station-controls">
+                    <button class="station-btn" id="sortByDistanceBtn" title="按距离选择站点">📍</button>
+                    <button class="station-btn" id="inputStationBtn" title="输入站名">🔍</button>
+                </div>
             </div>
 
             <div class="line-selector" id="lineSelector"></div>

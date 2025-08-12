@@ -17,6 +17,8 @@ class NextTrainApp {
         this.trainTimeEl = document.getElementById('trainTime');
         this.countdownEl = document.getElementById('countdown');
         this.trainInfoEl = document.getElementById('trainInfo');
+        this.sortByDistanceBtnEl = document.getElementById('sortByDistanceBtn');
+        this.inputStationBtnEl = document.getElementById('inputStationBtn');
 
         this.init();
     }
@@ -25,36 +27,36 @@ class NextTrainApp {
         // Get all unique stations from schedules
         const allStationNames = new Set();
         schedules.forEach(schedule => allStationNames.add(schedule.station));
-        
+
         const stationsWithSchedules = Array.from(allStationNames).map(stationName => {
             // Get coordinates from routes.json if available
             const coordinates = routesData.coordinates[stationName];
             const lat = coordinates ? coordinates[0] : 39.9042; // Default Beijing center
             const lng = coordinates ? coordinates[1] : 116.4074;
-            
+
             // Get schedules for this station
-            const stationSchedules = schedules.filter(schedule => 
+            const stationSchedules = schedules.filter(schedule =>
                 schedule.station === stationName
             );
-            
+
             // Group by route/line
             const uniqueRoutes = [...new Set(stationSchedules.map(s => s.route))];
             const lines = uniqueRoutes.map(route => {
                 const lineName = route + '号线';
                 const line = routesData.lines.find(l => l.lineName === lineName);
-                const lineSchedules = stationSchedules.filter(schedule => 
+                const lineSchedules = stationSchedules.filter(schedule =>
                     schedule.route === route
                 );
-                
+
                 const directions = this.groupSchedulesByDirection(lineSchedules);
-                
+
                 return {
                     lineName,
                     lineColor: line ? line.lineColor : '#999999', // Default color for unknown lines
                     directions
                 };
             });
-            
+
             return {
                 name: stationName,
                 lat,
@@ -62,13 +64,13 @@ class NextTrainApp {
                 lines
             };
         });
-        
+
         return { stations: stationsWithSchedules };
     }
 
     groupSchedulesByDirection(schedules) {
         const directions = new Map();
-        
+
         schedules.forEach(schedule => {
             const direction = schedule.destination;
             if (!directions.has(direction)) {
@@ -81,13 +83,13 @@ class NextTrainApp {
                     }
                 });
             }
-            
+
             const directionData = directions.get(direction);
             if (schedule.operating_time === '工作日') {
                 directionData.schedule.weekday.times = schedule.schedule_times;
             }
         });
-        
+
         return Array.from(directions.values());
     }
 
@@ -111,22 +113,22 @@ class NextTrainApp {
     async loadData() {
         try {
             const [routesResponse, schedulesResponse] = await Promise.all([
-                fetch('routes.json'),
-                fetch('timetable_schedules.jsonl')
+                fetch('data/routes.json'),
+                fetch('data/timetable.jsonl')
             ]);
-            
+
             if (!routesResponse.ok || !schedulesResponse.ok) {
                 throw new Error('无法加载数据');
             }
-            
+
             const routesData = await routesResponse.json();
             const schedulesText = await schedulesResponse.text();
-            
+
             // Parse JSONL format
             const schedules = schedulesText.trim().split('\n')
                 .filter(line => line.trim())
                 .map(line => JSON.parse(line));
-            
+
             this.data = this.mergeData(routesData, schedules);
         } catch (error) {
             throw new Error('加载数据失败');
@@ -223,6 +225,10 @@ class NextTrainApp {
         this.renderLineSelector();
         this.renderDirectionSelector();
         this.updateTrainInfo();
+
+        // 设置按钮事件监听器
+        this.sortByDistanceBtnEl.onclick = () => this.showStationSelector();
+        this.inputStationBtnEl.onclick = () => this.showStationInput();
     }
 
     renderLineSelector() {
@@ -244,7 +250,7 @@ class NextTrainApp {
         this.selectedLine.directions.forEach(direction => {
             const btn = document.createElement('button');
             btn.className = `direction-btn ${direction.direction === this.selectedDirection.direction ? 'active' : ''}`;
-            btn.textContent = direction.direction;
+            btn.textContent = `开往 ${direction.direction}`;
             btn.onclick = () => this.selectDirection(direction);
             this.directionSelectorEl.appendChild(btn);
         });
@@ -409,6 +415,132 @@ class NextTrainApp {
 
         this.setupUI();
         this.startCountdown();
+    }
+
+    showStationSelector() {
+        // 如果有用户位置，按距离排序；否则按字母顺序排序
+        let sortedStations;
+        if (this.userLocation) {
+            sortedStations = [...this.data.stations].map(station => {
+                const distance = this.calculateDistance(
+                    this.userLocation.lat,
+                    this.userLocation.lng,
+                    station.lat,
+                    station.lng
+                );
+                return { ...station, distance };
+            }).sort((a, b) => a.distance - b.distance);
+        } else {
+            sortedStations = [...this.data.stations].sort((a, b) => a.name.localeCompare(b.name));
+        }
+
+        this.errorEl.style.display = 'block';
+        this.appEl.style.display = 'none';
+        this.errorEl.innerHTML = `
+            <div style="text-align: center;">
+                <p style="margin-bottom: 20px;">${this.userLocation ? '附近车站' : '全部车站'}</p>
+                <div id="stationList" style="max-height: 400px; overflow-y: auto;">
+                    ${sortedStations.map(station => `
+                        <button onclick="app.selectStationFromList('${station.name}')" 
+                         style="display: block; width: 100%; margin: 5px 0; padding: 12px; 
+                                background: rgba(255,255,255,0.8); border: none; border-radius: 8px; 
+                                color: #333; font-size: 15px; cursor: pointer; text-align: left;">
+                            ${station.name}
+                        </button>
+                    `).join('')}
+                </div>
+                <button onclick="app.backToMain()" 
+                 style="margin-top: 15px; padding: 12px 24px; 
+                        background: rgba(255,255,255,0.3); border: none; border-radius: 8px; 
+                        color: white; font-size: 16px; cursor: pointer;">
+                    返回
+                </button>
+            </div>
+        `;
+    }
+
+    showStationInput() {
+        this.errorEl.style.display = 'block';
+        this.appEl.style.display = 'none';
+        this.errorEl.innerHTML = `
+            <div style="text-align: center;">
+                <p style="margin-bottom: 20px;">输入地铁站名：</p>
+                <div style="margin-bottom: 20px;">
+                    <input type="text" id="stationInput" placeholder="输入地铁站名搜索..." 
+                           style="width: 100%; padding: 15px; border: none; border-radius: 10px; 
+                                  background: rgba(255,255,255,0.9); color: #333; font-size: 16px;
+                                  margin-bottom: 10px;">
+                    <div id="searchResults" style="max-height: 300px; overflow-y: auto;"></div>
+                </div>
+                <button onclick="app.backToMain()" 
+                 style="padding: 12px 24px; background: rgba(255,255,255,0.3); 
+                        border: none; border-radius: 8px; color: white; font-size: 16px; cursor: pointer;">
+                    返回
+                </button>
+            </div>
+        `;
+
+        const input = document.getElementById('stationInput');
+        const results = document.getElementById('searchResults');
+
+        input.addEventListener('input', (e) => {
+            const query = e.target.value.trim();
+            if (!query) {
+                results.innerHTML = '';
+                return;
+            }
+
+            const filtered = this.data.stations.filter(station =>
+                station.name.includes(query)
+            );
+
+            results.innerHTML = filtered.map(station =>
+                `<button onclick="app.selectStationFromList('${station.name}')" 
+                 style="display: block; width: 100%; margin: 5px 0; padding: 12px; 
+                        background: rgba(255,255,255,0.8); border: none; border-radius: 8px; 
+                        color: #333; font-size: 15px; cursor: pointer; text-align: left;">
+                    ${station.name}
+                </button>`
+            ).join('');
+        });
+
+        input.focus();
+    }
+
+    selectStationFromList(stationName) {
+        this.nearestStation = this.data.stations.find(s => s.name === stationName);
+        // 计算距离（如果有用户位置）
+        if (this.userLocation) {
+            this.nearestStation.distance = this.calculateDistance(
+                this.userLocation.lat,
+                this.userLocation.lng,
+                this.nearestStation.lat,
+                this.nearestStation.lng
+            );
+        } else {
+            this.nearestStation.distance = 0;
+        }
+
+        this.selectedLine = this.nearestStation.lines[0];
+        this.selectedDirection = this.nearestStation.lines[0].directions[0];
+
+        this.errorEl.style.display = 'none';
+        this.appEl.style.display = 'block';
+
+        this.stationNameEl.textContent = this.nearestStation.name;
+        this.distanceEl.textContent = this.nearestStation.distance > 0
+            ? `距离您 ${(this.nearestStation.distance * 1000).toFixed(0)} 米`
+            : '已选择的地铁站';
+
+        this.renderLineSelector();
+        this.renderDirectionSelector();
+        this.updateTrainInfo();
+        this.startCountdown();
+    }
+
+    backToMain() {
+        this.errorEl.style.display = 'none';
+        this.appEl.style.display = 'block';
     }
 }
 
