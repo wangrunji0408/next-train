@@ -185,15 +185,80 @@
             background: rgba(255, 255, 255, 0.4);
             transform: scale(1.1);
         }
+
+        .language-selector {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 25px;
+            padding: 8px 15px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            z-index: 2000;
+        }
+
+        .language-selector:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .language-dropdown {
+            position: absolute;
+            top: 100%;
+            right: 0;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 10px;
+            margin-top: 5px;
+            min-width: 120px;
+            box-shadow: 0 5px 20px rgba(0, 0, 0, 0.2);
+            display: none;
+            z-index: 2001;
+        }
+
+        .language-dropdown.show {
+            display: block;
+        }
+
+        .language-option {
+            padding: 10px 15px;
+            color: #333;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+            border-radius: 8px;
+            margin: 2px;
+        }
+
+        .language-option:hover {
+            background: rgba(0, 0, 0, 0.1);
+        }
+
+        .language-option.active {
+            background: rgba(0, 0, 0, 0.1);
+            font-weight: 600;
+        }
     </style>
 </head>
 <body>
+    <div class="language-selector" id="languageSelector">
+        <span id="currentLanguage">🌐 中文</span>
+        <div class="language-dropdown" id="languageDropdown">
+            <div class="language-option" data-lang="zh">🇨🇳 中文</div>
+            <div class="language-option" data-lang="en">🇺🇸 English</div>
+        </div>
+    </div>
+
     <div class="container">
         <div class="header">
-            <h1>🚇 下班车时间</h1>
+            <h1 data-i18n="appTitle">🚇 下班车时间</h1>
         </div>
 
-        <div id="loading" class="loading">
+        <div id="loading" class="loading" data-i18n="locating">
             正在定位中...
         </div>
 
@@ -206,8 +271,8 @@
                 </div>
                 <div class="distance" id="distance"></div>
                 <div class="station-controls">
-                    <button class="station-btn" id="sortByDistanceBtn" title="按距离选择站点">📍</button>
-                    <button class="station-btn" id="inputStationBtn" title="输入站名">🔍</button>
+                    <button class="station-btn" id="sortByDistanceBtn" data-i18n-title="selectByDistance" title="按距离选择站点">📍</button>
+                    <button class="station-btn" id="inputStationBtn" data-i18n-title="searchStation" title="输入站名">🔍</button>
                 </div>
             </div>
 
@@ -217,12 +282,13 @@
 
             <div class="next-train">
                 <div class="train-time" id="trainTime">--:--</div>
-                <div class="countdown" id="countdown">计算中...</div>
+                <div class="countdown" id="countdown" data-i18n="calculating">计算中...</div>
                 <div class="train-info" id="trainInfo"></div>
             </div>
         </div>
     </div>
 
+    <script src="i18n.js"></script>
     <script src="app.js"></script>
 </body>
 </html>

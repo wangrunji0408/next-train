@@ -19,7 +19,11 @@ class NextTrainApp {
         this.trainInfoEl = document.getElementById('trainInfo');
         this.sortByDistanceBtnEl = document.getElementById('sortByDistanceBtn');
         this.inputStationBtnEl = document.getElementById('inputStationBtn');
+        this.languageSelectorEl = document.getElementById('languageSelector');
+        this.languageDropdownEl = document.getElementById('languageDropdown');
+        this.currentLanguageEl = document.getElementById('currentLanguage');
 
+        this.setupLanguageSelector();
         this.init();
     }
 
@@ -93,6 +97,72 @@ class NextTrainApp {
         return Array.from(directions.values());
     }
 
+    setupLanguageSelector() {
+        // Set up language selector
+        this.languageSelectorEl.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.languageDropdownEl.classList.toggle('show');
+        });
+
+        // Handle language option clicks
+        this.languageDropdownEl.addEventListener('click', (e) => {
+            if (e.target.classList.contains('language-option')) {
+                const lang = e.target.dataset.lang;
+                window.i18n.setLanguage(lang);
+                this.languageDropdownEl.classList.remove('show');
+            }
+        });
+
+        // Close dropdown when clicking outside
+        document.addEventListener('click', () => {
+            this.languageDropdownEl.classList.remove('show');
+        });
+
+        // Listen for language changes
+        window.addEventListener('languageChanged', () => {
+            this.updateLanguageDisplay();
+            this.translateUI();
+        });
+
+        // Initial language setup
+        this.updateLanguageDisplay();
+        this.translateUI();
+    }
+
+    updateLanguageDisplay() {
+        const currentLang = window.i18n.getCurrentLanguage();
+        const langMap = {
+            'zh': '🌐 中文',
+            'en': '🌐 English'
+        };
+        this.currentLanguageEl.textContent = langMap[currentLang];
+
+        // Update active state
+        this.languageDropdownEl.querySelectorAll('.language-option').forEach(option => {
+            option.classList.toggle('active', option.dataset.lang === currentLang);
+        });
+    }
+
+    translateUI() {
+        // Translate elements with data-i18n attribute
+        document.querySelectorAll('[data-i18n]').forEach(el => {
+            const key = el.getAttribute('data-i18n');
+            el.textContent = window.i18n.t(key);
+        });
+
+        // Translate title attributes
+        document.querySelectorAll('[data-i18n-title]').forEach(el => {
+            const key = el.getAttribute('data-i18n-title');
+            el.setAttribute('title', window.i18n.t(key));
+        });
+
+        // Update dynamic content if app is running
+        if (this.nearestStation) {
+            this.updateStationDisplay();
+            this.updateTrainInfo();
+        }
+    }
+
     async init() {
         try {
             await this.loadData();
@@ -118,7 +188,7 @@ class NextTrainApp {
             ]);
 
             if (!routesResponse.ok || !schedulesResponse.ok) {
-                throw new Error('无法加载数据');
+                throw new Error(window.i18n.t('cannotLoadData'));
             }
 
             const routesData = await routesResponse.json();
@@ -131,14 +201,14 @@ class NextTrainApp {
 
             this.data = this.mergeData(routesData, schedules);
         } catch (error) {
-            throw new Error('加载数据失败');
+            throw new Error(window.i18n.t('dataLoadFailed'));
         }
     }
 
     async getUserLocation() {
         return new Promise((resolve, reject) => {
             if (!navigator.geolocation) {
-                reject(new Error('您的设备不支持定位功能'));
+                reject(new Error(window.i18n.t('locationNotSupported')));
                 return;
             }
 
@@ -151,16 +221,16 @@ class NextTrainApp {
                     resolve();
                 },
                 (error) => {
-                    let message = '定位失败';
+                    let message = window.i18n.t('locationFailed');
                     switch (error.code) {
                         case error.PERMISSION_DENIED:
-                            message = '定位权限被拒绝';
+                            message = window.i18n.t('locationPermissionDenied');
                             break;
                         case error.POSITION_UNAVAILABLE:
-                            message = '位置信息不可用';
+                            message = window.i18n.t('locationUnavailable');
                             break;
                         case error.TIMEOUT:
-                            message = '定位超时';
+                            message = window.i18n.t('locationTimeout');
                             break;
                     }
                     reject(new Error(message));
@@ -217,11 +287,7 @@ class NextTrainApp {
         this.errorEl.style.display = 'none';
         this.appEl.style.display = 'block';
 
-        this.stationNameEl.textContent = this.nearestStation.name;
-        this.distanceEl.textContent = this.nearestStation.distance > 0
-            ? `距离您 ${(this.nearestStation.distance * 1000).toFixed(0)} 米`
-            : '已选择的地铁站';
-
+        this.updateStationDisplay();
         this.renderLineSelector();
         this.renderDirectionSelector();
         this.updateTrainInfo();
@@ -229,6 +295,13 @@ class NextTrainApp {
         // 设置按钮事件监听器
         this.sortByDistanceBtnEl.onclick = () => this.showStationSelector();
         this.inputStationBtnEl.onclick = () => this.showStationInput();
+    }
+
+    updateStationDisplay() {
+        this.stationNameEl.textContent = this.nearestStation.name;
+        this.distanceEl.textContent = this.nearestStation.distance > 0
+            ? window.i18n.t('distanceAway', { distance: (this.nearestStation.distance * 1000).toFixed(0) })
+            : window.i18n.t('selectedStation');
     }
 
     renderLineSelector() {
@@ -250,7 +323,7 @@ class NextTrainApp {
         this.selectedLine.directions.forEach(direction => {
             const btn = document.createElement('button');
             btn.className = `direction-btn ${direction.direction === this.selectedDirection.direction ? 'active' : ''}`;
-            btn.textContent = `开往 ${direction.direction}`;
+            btn.textContent = window.i18n.t('nextTrainTo', { destination: direction.direction });
             btn.onclick = () => this.selectDirection(direction);
             this.directionSelectorEl.appendChild(btn);
         });
@@ -273,14 +346,17 @@ class NextTrainApp {
     updateTrainInfo() {
         const nextTrain = this.getNextTrain();
         if (!nextTrain) {
-            this.trainTimeEl.textContent = '--:--';
-            this.countdownEl.textContent = '已停运';
+            this.trainTimeEl.textContent = window.i18n.t('trainTimeDefault');
+            this.countdownEl.textContent = window.i18n.t('noService');
             this.trainInfoEl.textContent = '';
             return;
         }
 
         this.trainTimeEl.textContent = nextTrain.time;
-        this.trainInfoEl.textContent = `${this.selectedLine.lineName} · ${this.selectedDirection.direction}`;
+        const lineNameTranslated = window.i18n.t('lineNumber', { 
+            number: this.selectedLine.lineName.replace('号线', '') 
+        });
+        this.trainInfoEl.textContent = `${lineNameTranslated} · ${this.selectedDirection.direction}`;
     }
 
     getNextTrain() {
@@ -327,7 +403,7 @@ class NextTrainApp {
     updateCountdown() {
         const nextTrain = this.getNextTrain();
         if (!nextTrain) {
-            this.countdownEl.textContent = '已停运';
+            this.countdownEl.textContent = window.i18n.t('noService');
             return;
         }
 
@@ -348,12 +424,12 @@ class NextTrainApp {
                 this.updateTrainInfo();
                 return;
             }
-            this.countdownEl.textContent = `${secondsLeft} 秒后发车`;
+            this.countdownEl.textContent = window.i18n.t('departsInSeconds', { seconds: secondsLeft });
         } else {
             const totalSeconds = timeDiff * 60 - currentSeconds;
             const minutes = Math.floor(totalSeconds / 60);
             const seconds = totalSeconds % 60;
-            this.countdownEl.textContent = `${minutes} 分 ${seconds} 秒后发车`;
+            this.countdownEl.textContent = window.i18n.t('departsIn', { minutes, seconds });
         }
     }
 
@@ -369,9 +445,9 @@ class NextTrainApp {
         this.errorEl.style.display = 'block';
         this.errorEl.innerHTML = `
             <div style="text-align: center;">
-                <p style="margin-bottom: 20px;">无法获取定位，请输入地铁站名：</p>
+                <p style="margin-bottom: 20px;">${window.i18n.t('noLocationFallback')}</p>
                 <div style="margin-bottom: 20px;">
-                    <input type="text" id="stationInput" placeholder="输入地铁站名搜索..." 
+                    <input type="text" id="stationInput" placeholder="${window.i18n.t('searchPlaceholder')}" 
                            style="width: 100%; padding: 15px; border: none; border-radius: 10px; 
                                   background: rgba(255,255,255,0.9); color: #333; font-size: 16px;
                                   margin-bottom: 10px;">
@@ -438,7 +514,7 @@ class NextTrainApp {
         this.appEl.style.display = 'none';
         this.errorEl.innerHTML = `
             <div style="text-align: center;">
-                <p style="margin-bottom: 20px;">${this.userLocation ? '附近车站' : '全部车站'}</p>
+                <p style="margin-bottom: 20px;">${this.userLocation ? window.i18n.t('nearbyStations') : window.i18n.t('allStations')}</p>
                 <div id="stationList" style="max-height: 400px; overflow-y: auto;">
                     ${sortedStations.map(station => `
                         <button onclick="app.selectStationFromList('${station.name}')" 
@@ -453,7 +529,7 @@ class NextTrainApp {
                  style="margin-top: 15px; padding: 12px 24px; 
                         background: rgba(255,255,255,0.3); border: none; border-radius: 8px; 
                         color: white; font-size: 16px; cursor: pointer;">
-                    返回
+                    ${window.i18n.t('back')}
                 </button>
             </div>
         `;
@@ -464,9 +540,9 @@ class NextTrainApp {
         this.appEl.style.display = 'none';
         this.errorEl.innerHTML = `
             <div style="text-align: center;">
-                <p style="margin-bottom: 20px;">输入地铁站名：</p>
+                <p style="margin-bottom: 20px;">${window.i18n.t('enterStationName')}</p>
                 <div style="margin-bottom: 20px;">
-                    <input type="text" id="stationInput" placeholder="输入地铁站名搜索..." 
+                    <input type="text" id="stationInput" placeholder="${window.i18n.t('searchPlaceholder')}" 
                            style="width: 100%; padding: 15px; border: none; border-radius: 10px; 
                                   background: rgba(255,255,255,0.9); color: #333; font-size: 16px;
                                   margin-bottom: 10px;">
@@ -475,7 +551,7 @@ class NextTrainApp {
                 <button onclick="app.backToMain()" 
                  style="padding: 12px 24px; background: rgba(255,255,255,0.3); 
                         border: none; border-radius: 8px; color: white; font-size: 16px; cursor: pointer;">
-                    返回
+                    ${window.i18n.t('back')}
                 </button>
             </div>
         `;
@@ -527,10 +603,7 @@ class NextTrainApp {
         this.errorEl.style.display = 'none';
         this.appEl.style.display = 'block';
 
-        this.stationNameEl.textContent = this.nearestStation.name;
-        this.distanceEl.textContent = this.nearestStation.distance > 0
-            ? `距离您 ${(this.nearestStation.distance * 1000).toFixed(0)} 米`
-            : '已选择的地铁站';
+        this.updateStationDisplay();
 
         this.renderLineSelector();
         this.renderDirectionSelector();
