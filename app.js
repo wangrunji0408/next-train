@@ -290,8 +290,8 @@ class NextTrainApp {
 
         // 设置按钮事件监听器
         this.sortByDistanceBtnEl.onclick = () => this.showStationSelector();
-        this.inputStationBtnEl.onclick = () => this.showStationInput();
-        
+        this.inputStationBtnEl.onclick = () => this.makeStationNameEditable();
+
         // 设置倒计时框点击事件
         this.setupClickGestures();
     }
@@ -299,12 +299,12 @@ class NextTrainApp {
     setupClickGestures() {
         const leftArrow = document.querySelector('.click-indicator.left');
         const rightArrow = document.querySelector('.click-indicator.right');
-        
+
         leftArrow.addEventListener('click', (e) => {
             e.stopPropagation();
             this.showPreviousTrain();
         });
-        
+
         rightArrow.addEventListener('click', (e) => {
             e.stopPropagation();
             this.showNextTrain();
@@ -386,7 +386,7 @@ class NextTrainApp {
     showPreviousTrain() {
         const allTrains = this.getAllTrains();
         if (allTrains.length === 0) return;
-        
+
         if (this.currentTrainIndex > 0) {
             this.currentTrainIndex--;
         } else {
@@ -399,7 +399,7 @@ class NextTrainApp {
     showNextTrain() {
         const allTrains = this.getAllTrains();
         if (allTrains.length === 0) return;
-        
+
         if (this.currentTrainIndex < allTrains.length - 1) {
             this.currentTrainIndex++;
         } else {
@@ -412,7 +412,7 @@ class NextTrainApp {
     updateTrainInfo() {
         const allTrains = this.getAllTrains();
         const currentTrain = allTrains[this.currentTrainIndex];
-        
+
         if (!currentTrain) {
             this.trainTimeEl.textContent = window.i18n.t('trainTimeDefault');
             this.countdownEl.textContent = window.i18n.t('noService');
@@ -420,7 +420,7 @@ class NextTrainApp {
         }
 
         this.trainTimeEl.textContent = currentTrain.time;
-        
+
         // Apply visual styling for departed trains
         if (currentTrain.isPast) {
             this.trainTimeEl.classList.add('departed');
@@ -450,7 +450,7 @@ class NextTrainApp {
 
         // Sort by time
         trains.sort((a, b) => a.minutes - b.minutes);
-        
+
         return trains;
     }
 
@@ -458,10 +458,10 @@ class NextTrainApp {
         const allTrains = this.getAllTrains();
         const now = new Date();
         const currentTime = now.getHours() * 60 + now.getMinutes();
-        
+
         // Find first train that hasn't departed yet
         const nextTrainIndex = allTrains.findIndex(train => train.minutes > currentTime);
-        
+
         // If no future trains found, default to first train
         return nextTrainIndex >= 0 ? nextTrainIndex : 0;
     }
@@ -510,7 +510,7 @@ class NextTrainApp {
     updateCountdown() {
         const allTrains = this.getAllTrains();
         const currentTrain = allTrains[this.currentTrainIndex];
-        
+
         if (!currentTrain) {
             this.countdownEl.textContent = window.i18n.t('noService');
             return;
@@ -650,54 +650,6 @@ class NextTrainApp {
         `;
     }
 
-    showStationInput() {
-        this.errorEl.style.display = 'block';
-        this.appEl.style.display = 'none';
-        this.errorEl.innerHTML = `
-            <div style="text-align: center;">
-                <p style="margin-bottom: 20px;">${window.i18n.t('enterStationName')}</p>
-                <div style="margin-bottom: 20px;">
-                    <input type="text" id="stationInput" placeholder="${window.i18n.t('searchPlaceholder')}" 
-                           style="width: 100%; padding: 15px; border: none; border-radius: 10px; 
-                                  background: rgba(255,255,255,0.9); color: #333; font-size: 16px;
-                                  margin-bottom: 10px;">
-                    <div id="searchResults" style="max-height: 300px; overflow-y: auto;"></div>
-                </div>
-                <button onclick="app.backToMain()" 
-                 style="padding: 12px 24px; background: rgba(255,255,255,0.3); 
-                        border: none; border-radius: 8px; color: white; font-size: 16px; cursor: pointer;">
-                    ${window.i18n.t('back')}
-                </button>
-            </div>
-        `;
-
-        const input = document.getElementById('stationInput');
-        const results = document.getElementById('searchResults');
-
-        input.addEventListener('input', (e) => {
-            const query = e.target.value.trim();
-            if (!query) {
-                results.innerHTML = '';
-                return;
-            }
-
-            const filtered = this.data.stations.filter(station =>
-                station.name.includes(query)
-            );
-
-            results.innerHTML = filtered.map(station =>
-                `<button onclick="app.selectStationFromList('${station.name}')" 
-                 style="display: block; width: 100%; margin: 5px 0; padding: 12px; 
-                        background: rgba(255,255,255,0.8); border: none; border-radius: 8px; 
-                        color: #333; font-size: 15px; cursor: pointer; text-align: left;">
-                    ${station.name}
-                </button>`
-            ).join('');
-        });
-
-        input.focus();
-    }
-
     selectStationFromList(stationName) {
         this.nearestStation = this.data.stations.find(s => s.name === stationName);
         // 计算距离（如果有用户位置）
@@ -730,6 +682,176 @@ class NextTrainApp {
     backToMain() {
         this.errorEl.style.display = 'none';
         this.appEl.style.display = 'block';
+    }
+
+    makeStationNameEditable() {
+        const currentStationName = this.stationNameEl.textContent;
+
+        // Create input element
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.value = currentStationName;
+        input.style.cssText = `
+            background: transparent;
+            border: 2px solid rgba(255,255,255,0.5);
+            border-radius: 8px;
+            color: white;
+            font-size: 32px;
+            font-weight: 600;
+            text-align: center;
+            width: 100%;
+            padding: 5px 10px;
+            outline: none;
+        `;
+        input.placeholder = window.i18n.t('searchPlaceholder');
+
+        // Create results container
+        const resultsContainer = document.createElement('div');
+        resultsContainer.id = 'stationSearchResults';
+        resultsContainer.style.cssText = `
+            position: fixed;
+            background: rgba(255,255,255,0.95);
+            border-radius: 8px;
+            max-height: 200px;
+            overflow-y: auto;
+            z-index: 99999;
+            display: none;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            backdrop-filter: blur(10px);
+        `;
+
+        // Store original content
+        const originalContent = this.stationNameEl.innerHTML;
+
+        // Replace station name with input
+        this.stationNameEl.innerHTML = '';
+        this.stationNameEl.appendChild(input);
+
+        // Append results container to body to avoid z-index issues
+        document.body.appendChild(resultsContainer);
+
+        // Focus input and select all text
+        input.focus();
+        input.select();
+
+        // Position results container
+        const positionResults = () => {
+            const inputRect = input.getBoundingClientRect();
+            resultsContainer.style.left = inputRect.left + 'px';
+            resultsContainer.style.top = (inputRect.bottom + 5) + 'px';
+            resultsContainer.style.width = inputRect.width + 'px';
+        };
+
+        // Handle input changes for search suggestions
+        input.addEventListener('input', (e) => {
+            const query = e.target.value.trim();
+            if (!query) {
+                resultsContainer.style.display = 'none';
+                return;
+            }
+
+            const filtered = this.data.stations.filter(station =>
+                station.name.includes(query)
+            ).slice(0, 8); // Limit to 8 results
+
+            if (filtered.length > 0) {
+                resultsContainer.innerHTML = filtered.map(station =>
+                    `<div onclick="app.selectStationFromInput('${station.name}')" 
+                     style="padding: 12px; cursor: pointer; color: #333; border-bottom: 1px solid rgba(0,0,0,0.1); font-size: 16px;"
+                     onmouseover="this.style.backgroundColor='rgba(0,0,0,0.1)'"
+                     onmouseout="this.style.backgroundColor='transparent'">
+                        ${station.name}
+                    </div>`
+                ).join('');
+                positionResults();
+                resultsContainer.style.display = 'block';
+            } else {
+                resultsContainer.style.display = 'none';
+            }
+        });
+
+        // Handle Enter key to search or escape to cancel
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                const query = input.value.trim();
+                const exactMatch = this.data.stations.find(station => station.name === query);
+                if (exactMatch) {
+                    this.selectStationFromInput(exactMatch.name);
+                } else {
+                    // Find first partial match
+                    const partialMatch = this.data.stations.find(station => station.name.includes(query));
+                    if (partialMatch) {
+                        this.selectStationFromInput(partialMatch.name);
+                    }
+                }
+            } else if (e.key === 'Escape') {
+                this.cancelStationEdit(originalContent);
+            }
+        });
+
+        // Handle click outside to cancel
+        const handleClickOutside = (e) => {
+            if (!this.stationNameEl.contains(e.target) && !resultsContainer.contains(e.target)) {
+                this.cancelStationEdit(originalContent);
+                document.removeEventListener('click', handleClickOutside);
+            }
+        };
+
+        // Add click outside listener after a short delay to avoid immediate trigger
+        setTimeout(() => {
+            document.addEventListener('click', handleClickOutside);
+        }, 100);
+
+        // Store the cleanup function
+        this.cleanupStationEdit = () => {
+            document.removeEventListener('click', handleClickOutside);
+            // Remove results container from body
+            if (resultsContainer.parentNode) {
+                resultsContainer.parentNode.removeChild(resultsContainer);
+            }
+        };
+    }
+
+    selectStationFromInput(stationName) {
+        this.nearestStation = this.data.stations.find(s => s.name === stationName);
+
+        // Calculate distance if user location available
+        if (this.userLocation) {
+            this.nearestStation.distance = this.calculateDistance(
+                this.userLocation.lat,
+                this.userLocation.lng,
+                this.nearestStation.lat,
+                this.nearestStation.lng
+            );
+        } else {
+            this.nearestStation.distance = 0;
+        }
+
+        this.selectedLine = this.nearestStation.lines[0];
+        this.selectedDirection = this.nearestStation.lines[0].directions[0];
+        this.currentTrainIndex = this.getNextTrainIndex();
+
+        // Restore station display
+        this.updateStationDisplay();
+        this.renderLineSelector();
+        this.renderDirectionSelector();
+        this.updateTrainInfo();
+
+        // Cleanup event listeners
+        if (this.cleanupStationEdit) {
+            this.cleanupStationEdit();
+            this.cleanupStationEdit = null;
+        }
+    }
+
+    cancelStationEdit(originalContent) {
+        this.stationNameEl.innerHTML = originalContent;
+
+        // Cleanup event listeners
+        if (this.cleanupStationEdit) {
+            this.cleanupStationEdit();
+            this.cleanupStationEdit = null;
+        }
     }
 }
 
