@@ -65,7 +65,7 @@ def extract_destination(lines: List[List[str]]) -> Optional[str]:
     """
     for line in lines:
         line_text = "".join(line)
-        match = re.search(r"[开牙去][往住]?(.+?)站?(方向)?(To)?", line_text)
+        match = re.search(r"[开牙去][往住]?(.+?)站?(方向|To)", line_text)
         if match:
             return match.group(1).strip()
     return None
@@ -150,7 +150,7 @@ def extract_schedule_times(lines: List[List[str]]) -> List[str]:
         except ValueError:
             continue
 
-    schedule_times.sort()
+    schedule_times.sort(key=lambda x: x.replace("00:", "24:"))
     return schedule_times
 
 
@@ -161,15 +161,17 @@ THRESHOLDS = {
 }
 
 
-def convert_and_binarize_image(image_path: str) -> List[Image.Image]:
+def convert_and_binarize_image(
+    image_path: str,
+) -> List[Tuple[Image.Image, Image.Image]]:
     """
-    Convert image to PNG format, apply binarization for better OCR, and split if tall vertical
+    Convert image to PNG format, keep grayscale and binary versions, and split if tall vertical
 
     Args:
         image_path: Path to image file
 
     Returns:
-        List of processed images (1 for normal images, 2 for split tall images)
+        List of (grayscale_image, binary_image) tuples (1 for normal images, 2 for split tall images)
     """
     line = Path(image_path).stem.split("-")[0]
     threshold = THRESHOLDS.get(line, 80)
@@ -210,13 +212,15 @@ def convert_and_binarize_image(image_path: str) -> List[Image.Image]:
 
         processed_images = []
         for image in images:
-            # Apply binarization
-            img_array = np.array(image)
+            # Keep grayscale version
+            grayscale_img = image.copy()
 
-            # Apply threshold
+            # Create binary version
+            img_array = np.array(image)
             binary_array = (img_array > threshold).astype(np.uint8) * 255
             binary_img = Image.fromarray(binary_array, mode="L")
-            processed_images.append(binary_img)
+
+            processed_images.append((grayscale_img, binary_img))
 
         return processed_images
 
@@ -246,32 +250,47 @@ def parse_timetable_image(image_path: str) -> List[Dict]:
     """
     try:
         # Convert and binarize image for better OCR (may return multiple images if split)
-        images = convert_and_binarize_image(image_path)
+        image_pairs = convert_and_binarize_image(image_path)
 
         os.makedirs("annotations", exist_ok=True)
         results = []
 
-        for i, image in enumerate(images):
-            suffix = f"_part{i+1}" if len(images) > 1 else ""
-            annotation_path = f"annotations/{Path(image_path).stem}{suffix}.png"
+        for i, (grayscale_img, binary_img) in enumerate(image_pairs):
+            suffix = f"-{i+1}" if len(image_pairs) > 1 else ""
+            annotation_path_gray = (
+                f"annotations/{Path(image_path).stem}{suffix}_gray.png"
+            )
+            annotation_path_binary = (
+                f"annotations/{Path(image_path).stem}{suffix}_binary.png"
+            )
 
-            # Perform OCR
-            ocr = ocrmac.OCR(image, framework="livetext")
-            annotations = ocr.recognize()
-            ocr.annotate_PIL().save(annotation_path)
+            # Perform OCR on grayscale for destination and operating_time
+            ocr_gray = ocrmac.OCR(grayscale_img, framework="livetext")
+            annotations_gray = ocr_gray.recognize()
+            ocr_gray.annotate_PIL().save(annotation_path_gray)
 
-            # Group text by lines
-            lines = group_text_by_lines(annotations)
+            # Group text by lines for grayscale OCR
+            lines_gray = group_text_by_lines(annotations_gray)
 
-            # Extract information
-            destination = extract_destination(lines)
-            operating_time = extract_operating_time(lines)
-            schedule_times = extract_schedule_times(lines)
+            # Extract destination and operating_time from grayscale
+            destination = extract_destination(lines_gray)
+            operating_time = extract_operating_time(lines_gray)
+
+            # Perform OCR on binary image for schedule_times
+            ocr_binary = ocrmac.OCR(binary_img, framework="livetext")
+            annotations_binary = ocr_binary.recognize()
+            ocr_binary.annotate_PIL().save(annotation_path_binary)
+
+            # Group text by lines for binary OCR
+            lines_binary = group_text_by_lines(annotations_binary)
+
+            # Extract schedule_times from binary
+            schedule_times = extract_schedule_times(lines_binary)
             route, station = extract_route_and_station(image_path)
 
             # Debug
             print(
-                f"线路：{route}, 站名：{station}, 开往：{destination}, 时段：{operating_time}",
+                f"线路-{route}, 站名-{station}, 开往-{destination}, 时段-{operating_time}",
             )
             minutes = {}
             for time in schedule_times:
