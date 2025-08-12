@@ -305,7 +305,7 @@ class NextTrainApp {
         this.nearestStation.lines.forEach(line => {
             const btn = document.createElement('button');
             btn.className = `line-btn ${line.lineName === this.selectedLine.lineName ? 'active' : ''}`;
-            
+
             // Apply different styles for selected vs unselected lines
             if (line.lineColor && line.lineColor !== null) {
                 if (line.lineName === this.selectedLine.lineName) {
@@ -320,7 +320,7 @@ class NextTrainApp {
                     btn.style.border = `3px solid ${line.lineColor}`;
                 }
             }
-            
+
             // Use formatLineName to get the localized line name for display
             btn.textContent = this.formatLineName(line.route);
             btn.onclick = () => this.selectLine(line);
@@ -429,7 +429,7 @@ class NextTrainApp {
 
         if (timeDiff === 0) {
             const secondsLeft = 60 - currentSeconds;
-            if (secondsLeft <= 0 || currentSeconds === 0) {
+            if (secondsLeft <= 0) {
                 this.updateTrainInfo();
                 return;
             }
@@ -437,7 +437,7 @@ class NextTrainApp {
         } else {
             const totalSeconds = timeDiff * 60 - currentSeconds;
             const minutes = Math.floor(totalSeconds / 60);
-            const seconds = totalSeconds % 60;
+            const seconds = String(totalSeconds % 60);
             this.countdownEl.textContent = window.i18n.t('departsIn', { minutes, seconds });
         }
     }
