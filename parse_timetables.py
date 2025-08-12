@@ -333,9 +333,7 @@ def parse_timetable_image(
                     destination, route, route_stations
                 )
                 if corrected_destination != destination:
-                    print(
-                        f"Auto-corrected destination: '{destination}' -> '{corrected_destination}'"
-                    )
+                    print(f"Auto-correct: '{destination}' -> '{corrected_destination}'")
                 destination = corrected_destination
 
             # Perform OCR on binary image for schedule_times
@@ -372,7 +370,6 @@ def parse_timetable_image(
                 "destination": destination,
                 "operating_time": operating_time,
                 "schedule_times": schedule_times,
-                "status": "success",
             }
             results.append(result)
 
@@ -386,7 +383,6 @@ def parse_timetable_image(
                 "destination": None,
                 "operating_time": None,
                 "schedule_times": [],
-                "status": "error",
                 "error": str(e),
             }
         ]
@@ -456,9 +452,9 @@ def main():
         for i, future in enumerate(as_completed(future_to_path)):
             results_list = future.result()
             for result in results_list:
-                print(json.dumps(result, ensure_ascii=False), file=fout)
+                print(json.dumps(result, ensure_ascii=False), file=fout, flush=True)
 
-                if result["status"] == "success":
+                if "error" not in result:
                     successful += 1
                     print(f"✅ [{i}/{n}]: {result['filename']}")
                 else:
