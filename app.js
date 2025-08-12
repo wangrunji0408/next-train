@@ -27,6 +27,16 @@ class NextTrainApp {
         this.init();
     }
 
+    formatLineName(route) {
+        if (/^\d+$/.test(route)) {
+            // Numeric route (e.g., "1" -> "1号线" or "Line 1")
+            return window.i18n.t('lineNameNumeric', { number: route });
+        } else {
+            // Non-numeric route (e.g., "昌平线" -> "昌平线" or "Changping Line")
+            return window.i18n.t('lineNameNonNumeric', { name: route });
+        }
+    }
+
     mergeData(routesData, schedules) {
         // Get all unique stations from schedules
         const allStationNames = new Set();
@@ -46,8 +56,9 @@ class NextTrainApp {
             // Group by route/line
             const uniqueRoutes = [...new Set(stationSchedules.map(s => s.route))];
             const lines = uniqueRoutes.map(route => {
-                const lineName = route + '号线';
-                const line = routesData.lines.find(l => l.lineName === lineName);
+                const lineName = this.formatLineName(route);
+                // Find the line by matching the route number with the lineName in routes.json
+                const line = routesData.lines.find(l => l.lineName === route);
                 const lineSchedules = stationSchedules.filter(schedule =>
                     schedule.route === route
                 );
@@ -56,6 +67,7 @@ class NextTrainApp {
 
                 return {
                     lineName,
+                    route, // Store original route for formatting
                     lineColor: line ? line.lineColor : '#999999', // Default color for unknown lines
                     directions
                 };
@@ -159,6 +171,8 @@ class NextTrainApp {
         // Update dynamic content if app is running
         if (this.nearestStation) {
             this.updateStationDisplay();
+            this.renderLineSelector();
+            this.renderDirectionSelector();
             this.updateTrainInfo();
         }
     }
@@ -310,8 +324,21 @@ class NextTrainApp {
         this.nearestStation.lines.forEach(line => {
             const btn = document.createElement('button');
             btn.className = `line-btn ${line.lineName === this.selectedLine.lineName ? 'active' : ''}`;
-            btn.style.backgroundColor = line.lineName === this.selectedLine.lineName ? line.lineColor : '';
-            btn.textContent = line.lineName;
+            
+            // Always apply lineColor as background, with fallback transparency for inactive buttons
+            if (line.lineColor && line.lineColor !== null) {
+                if (line.lineName === this.selectedLine.lineName) {
+                    btn.style.backgroundColor = line.lineColor;
+                    btn.style.color = '#ffffff';
+                } else {
+                    btn.style.backgroundColor = line.lineColor + '80'; // Add transparency
+                    btn.style.color = '#ffffff';
+                    btn.style.border = `2px solid ${line.lineColor}`;
+                }
+            }
+            
+            // Use formatLineName to get the localized line name for display
+            btn.textContent = this.formatLineName(line.route);
             btn.onclick = () => this.selectLine(line);
             this.lineSelectorEl.appendChild(btn);
         });
@@ -353,9 +380,7 @@ class NextTrainApp {
         }
 
         this.trainTimeEl.textContent = nextTrain.time;
-        const lineNameTranslated = window.i18n.t('lineNumber', { 
-            number: this.selectedLine.lineName.replace('号线', '') 
-        });
+        const lineNameTranslated = this.formatLineName(this.selectedLine.route);
         this.trainInfoEl.textContent = `${lineNameTranslated} · ${this.selectedDirection.direction}`;
     }
 

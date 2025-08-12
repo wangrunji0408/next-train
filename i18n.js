@@ -56,6 +56,8 @@ class I18n {
                 departsIn: '{minutes} 分 {seconds} 秒后发车',
                 departsInSeconds: '{seconds} 秒后发车',
                 lineNumber: '{number}号线',
+                lineNameNumeric: '{number}号线',
+                lineNameNonNumeric: '{name}线',
                 
                 // Search and input
                 enterStationName: '输入地铁站名：',
@@ -104,6 +106,8 @@ class I18n {
                 departsIn: 'Departs in {minutes}m {seconds}s',
                 departsInSeconds: 'Departs in {seconds}s',
                 lineNumber: 'Line {number}',
+                lineNameNumeric: 'Line {number}',
+                lineNameNonNumeric: '{name} Line',
                 
                 // Search and input
                 enterStationName: 'Enter station name:',
