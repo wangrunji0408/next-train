@@ -21,6 +21,76 @@ class NextTrainApp {
         this.init();
     }
 
+    mergeData(routesData, schedules) {
+        // Get all unique stations from schedules
+        const allStationNames = new Set();
+        schedules.forEach(schedule => allStationNames.add(schedule.station));
+        
+        const stationsWithSchedules = Array.from(allStationNames).map(stationName => {
+            // Get coordinates from routes.json if available
+            const coordinates = routesData.coordinates[stationName];
+            const lat = coordinates ? coordinates[0] : 39.9042; // Default Beijing center
+            const lng = coordinates ? coordinates[1] : 116.4074;
+            
+            // Get schedules for this station
+            const stationSchedules = schedules.filter(schedule => 
+                schedule.station === stationName
+            );
+            
+            // Group by route/line
+            const uniqueRoutes = [...new Set(stationSchedules.map(s => s.route))];
+            const lines = uniqueRoutes.map(route => {
+                const lineName = route + '号线';
+                const line = routesData.lines.find(l => l.lineName === lineName);
+                const lineSchedules = stationSchedules.filter(schedule => 
+                    schedule.route === route
+                );
+                
+                const directions = this.groupSchedulesByDirection(lineSchedules);
+                
+                return {
+                    lineName,
+                    lineColor: line ? line.lineColor : '#999999', // Default color for unknown lines
+                    directions
+                };
+            });
+            
+            return {
+                name: stationName,
+                lat,
+                lng,
+                lines
+            };
+        });
+        
+        return { stations: stationsWithSchedules };
+    }
+
+    groupSchedulesByDirection(schedules) {
+        const directions = new Map();
+        
+        schedules.forEach(schedule => {
+            const direction = schedule.destination;
+            if (!directions.has(direction)) {
+                directions.set(direction, {
+                    direction,
+                    schedule: {
+                        weekday: {
+                            times: []
+                        }
+                    }
+                });
+            }
+            
+            const directionData = directions.get(direction);
+            if (schedule.operating_time === '工作日') {
+                directionData.schedule.weekday.times = schedule.schedule_times;
+            }
+        });
+        
+        return Array.from(directions.values());
+    }
+
     async init() {
         try {
             await this.loadData();
@@ -40,11 +110,24 @@ class NextTrainApp {
 
     async loadData() {
         try {
-            const response = await fetch('data.json');
-            if (!response.ok) {
+            const [routesResponse, schedulesResponse] = await Promise.all([
+                fetch('routes.json'),
+                fetch('timetable_schedules.jsonl')
+            ]);
+            
+            if (!routesResponse.ok || !schedulesResponse.ok) {
                 throw new Error('无法加载数据');
             }
-            this.data = await response.json();
+            
+            const routesData = await routesResponse.json();
+            const schedulesText = await schedulesResponse.text();
+            
+            // Parse JSONL format
+            const schedules = schedulesText.trim().split('\n')
+                .filter(line => line.trim())
+                .map(line => JSON.parse(line));
+            
+            this.data = this.mergeData(routesData, schedules);
         } catch (error) {
             throw new Error('加载数据失败');
         }
@@ -147,8 +230,8 @@ class NextTrainApp {
 
         this.nearestStation.lines.forEach(line => {
             const btn = document.createElement('button');
-            btn.className = `line-btn ${line.lineId === this.selectedLine.lineId ? 'active' : ''}`;
-            btn.style.backgroundColor = line.lineId === this.selectedLine.lineId ? line.lineColor : '';
+            btn.className = `line-btn ${line.lineName === this.selectedLine.lineName ? 'active' : ''}`;
+            btn.style.backgroundColor = line.lineName === this.selectedLine.lineName ? line.lineColor : '';
             btn.textContent = line.lineName;
             btn.onclick = () => this.selectLine(line);
             this.lineSelectorEl.appendChild(btn);
@@ -197,43 +280,23 @@ class NextTrainApp {
     getNextTrain() {
         const now = new Date();
         const currentTime = now.getHours() * 60 + now.getMinutes();
-        const schedule = this.selectedDirection.schedule.weekday;
+        const times = this.selectedDirection.schedule.weekday.times;
 
-        const firstTime = this.timeToMinutes(schedule.first);
-        const lastTime = this.timeToMinutes(schedule.last);
-
-        if (currentTime < firstTime || currentTime > lastTime) {
+        if (!times || times.length === 0) {
             return null;
         }
 
-        const currentInterval = schedule.intervals.find(interval => {
-            const start = this.timeToMinutes(interval.start);
-            const end = this.timeToMinutes(interval.end);
-            return currentTime >= start && currentTime < end;
-        });
+        // Convert times to minutes and find next train
+        const timeInMinutes = times.map(time => this.timeToMinutes(time));
+        const nextTime = timeInMinutes.find(time => time > currentTime);
 
-        if (!currentInterval) {
-            return null;
-        }
-
-        let nextTrainTime = currentTime;
-        const intervalStart = this.timeToMinutes(currentInterval.start);
-
-        if (currentTime === intervalStart) {
-            nextTrainTime = currentTime;
-        } else {
-            const timeSinceStart = currentTime - intervalStart;
-            const intervalsPassed = Math.floor(timeSinceStart / currentInterval.interval);
-            nextTrainTime = intervalStart + (intervalsPassed + 1) * currentInterval.interval;
-        }
-
-        if (nextTrainTime > lastTime) {
+        if (!nextTime) {
             return null;
         }
 
         return {
-            time: this.minutesToTime(nextTrainTime),
-            minutes: nextTrainTime
+            time: this.minutesToTime(nextTime),
+            minutes: nextTime
         };
     }
 
@@ -326,7 +389,7 @@ class NextTrainApp {
             );
 
             results.innerHTML = filtered.map(station =>
-                `<button onclick="app.selectStationManually('${station.id}')" 
+                `<button onclick="app.selectStationManually('${station.name}')" 
                  style="display: block; width: 100%; margin: 5px 0; padding: 12px; 
                         background: rgba(255,255,255,0.8); border: none; border-radius: 8px; 
                         color: #333; font-size: 15px; cursor: pointer; text-align: left;">
@@ -338,8 +401,8 @@ class NextTrainApp {
         input.focus();
     }
 
-    selectStationManually(stationId) {
-        this.nearestStation = this.data.stations.find(s => s.id === stationId);
+    selectStationManually(stationName) {
+        this.nearestStation = this.data.stations.find(s => s.name === stationName);
         this.nearestStation.distance = 0; // 手动选择时不显示距离
         this.selectedLine = this.nearestStation.lines[0];
         this.selectedDirection = this.nearestStation.lines[0].directions[0];
