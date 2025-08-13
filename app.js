@@ -487,7 +487,7 @@ class NextTrainApp {
             return {
                 time: time,
                 minutes: minutes,
-                isPast: minutes <= currentTime
+                isPast: minutes < currentTime,
             };
         });
 
@@ -503,7 +503,7 @@ class NextTrainApp {
         const currentTime = beijingTime.getHours() * 60 + beijingTime.getMinutes();
 
         // Find first train that hasn't departed yet
-        const nextTrainIndex = allTrains.findIndex(train => train.minutes > currentTime);
+        const nextTrainIndex = allTrains.findIndex(train => train.minutes >= currentTime);
 
         // If no future trains found, default to first train
         return nextTrainIndex >= 0 ? nextTrainIndex : 0;
