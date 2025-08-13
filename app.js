@@ -83,6 +83,21 @@ class NextTrainApp {
         return { stations: stationsWithSchedules };
     }
 
+    getApplicableDays(operatingTime) {
+        switch (operatingTime) {
+            case '工作日':
+                return [1, 2, 3, 4, 5]; // Monday to Friday
+            case '双休日':
+                return [0, 6]; // Sunday and Saturday
+            case '星期五':
+                return [5]; // Friday only
+            case '平日':
+                return [0, 1, 2, 3, 4, 6]; // Everyday except Friday
+            default:
+                return [0, 1, 2, 3, 4, 5, 6]; // Default to everyday
+        }
+    }
+
     groupSchedulesByDirection(schedules) {
         const directions = new Map();
 
@@ -91,21 +106,49 @@ class NextTrainApp {
             if (!directions.has(direction)) {
                 directions.set(direction, {
                     direction,
-                    schedule: {
-                        weekday: {
-                            times: []
-                        }
-                    }
+                    schedules: []
                 });
             }
 
             const directionData = directions.get(direction);
-            if (schedule.operating_time === '工作日') {
-                directionData.schedule.weekday.times = schedule.schedule_times;
-            }
+            directionData.schedules.push({
+                operatingTime: schedule.operating_time,
+                times: schedule.schedule_times,
+                applicableDays: this.getApplicableDays(schedule.operating_time)
+            });
         });
 
         return Array.from(directions.values());
+    }
+
+    getBeijingTime() {
+        const now = new Date();
+        const beijingTime = new Date(now.getTime() + (now.getTimezoneOffset() * 60000) + (8 * 3600000));
+        return beijingTime;
+    }
+
+    getCurrentScheduleTimes() {
+        const beijingTime = this.getBeijingTime();
+        const currentDayOfWeek = beijingTime.getDay(); // 0=Sunday, 1=Monday, ..., 6=Saturday
+
+        // Find all schedules that apply to the current day
+        const applicableSchedules = this.selectedDirection.schedules.filter(schedule =>
+            schedule.applicableDays.includes(currentDayOfWeek)
+        );
+
+        if (applicableSchedules.length === 0) {
+            // No applicable schedules found, fallback to workday schedule
+            const workdaySchedule = this.selectedDirection.schedules.find(schedule =>
+                schedule.operatingTime === '工作日'
+            );
+            return workdaySchedule ? workdaySchedule.times : [];
+        }
+
+        // If multiple schedules apply, prioritize by specificity:
+        // Schedules with fewer applicable days are more specific and have higher priority
+        applicableSchedules.sort((a, b) => a.applicableDays.length - b.applicableDays.length);
+
+        return applicableSchedules[0].times;
     }
 
     setupLanguageSelector() {
@@ -430,9 +473,9 @@ class NextTrainApp {
     }
 
     getAllTrains() {
-        const now = new Date();
-        const currentTime = now.getHours() * 60 + now.getMinutes();
-        const times = this.selectedDirection.schedule.weekday.times;
+        const beijingTime = this.getBeijingTime();
+        const currentTime = beijingTime.getHours() * 60 + beijingTime.getMinutes();
+        const times = this.getCurrentScheduleTimes();
 
         if (!times || times.length === 0) {
             return [];
@@ -456,8 +499,8 @@ class NextTrainApp {
 
     getNextTrainIndex() {
         const allTrains = this.getAllTrains();
-        const now = new Date();
-        const currentTime = now.getHours() * 60 + now.getMinutes();
+        const beijingTime = this.getBeijingTime();
+        const currentTime = beijingTime.getHours() * 60 + beijingTime.getMinutes();
 
         // Find first train that hasn't departed yet
         const nextTrainIndex = allTrains.findIndex(train => train.minutes > currentTime);
@@ -467,9 +510,9 @@ class NextTrainApp {
     }
 
     getNextTrain() {
-        const now = new Date();
-        const currentTime = now.getHours() * 60 + now.getMinutes();
-        const times = this.selectedDirection.schedule.weekday.times;
+        const beijingTime = this.getBeijingTime();
+        const currentTime = beijingTime.getHours() * 60 + beijingTime.getMinutes();
+        const times = this.getCurrentScheduleTimes();
 
         if (!times || times.length === 0) {
             return null;
@@ -516,9 +559,9 @@ class NextTrainApp {
             return;
         }
 
-        const now = new Date();
-        const currentMinutes = now.getHours() * 60 + now.getMinutes();
-        const currentSeconds = now.getSeconds();
+        const beijingTime = this.getBeijingTime();
+        const currentMinutes = beijingTime.getHours() * 60 + beijingTime.getMinutes();
+        const currentSeconds = beijingTime.getSeconds();
 
         const timeDiff = currentTrain.minutes - currentMinutes;
 
@@ -538,7 +581,7 @@ class NextTrainApp {
             const totalSeconds = timeDiff * 60 - currentSeconds;
             const minutes = Math.floor(totalSeconds / 60);
             const seconds = String(totalSeconds % 60);
-            
+
             if (minutes < 1) {
                 // Less than 1 minute - only show seconds
                 this.countdownEl.textContent = window.i18n.t('departsInSeconds', { seconds: totalSeconds });
