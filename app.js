@@ -532,18 +532,20 @@ class NextTrainApp {
         this.countdownEl.classList.remove('departed');
 
         if (timeDiff === 0) {
-            const secondsLeft = 60 - currentSeconds;
-            if (secondsLeft <= 0) {
-                this.countdownEl.textContent = window.i18n.t('trainDeparted');
-                this.countdownEl.classList.add('departed');
-                return;
-            }
-            this.countdownEl.textContent = window.i18n.t('departsInSeconds', { seconds: secondsLeft });
+            // Same minute - show "即将发车"
+            this.countdownEl.textContent = window.i18n.t('departing');
         } else {
             const totalSeconds = timeDiff * 60 - currentSeconds;
             const minutes = Math.floor(totalSeconds / 60);
             const seconds = String(totalSeconds % 60);
-            this.countdownEl.textContent = window.i18n.t('departsIn', { minutes, seconds });
+            
+            if (minutes < 1) {
+                // Less than 1 minute - only show seconds
+                this.countdownEl.textContent = window.i18n.t('departsInSeconds', { seconds: totalSeconds });
+            } else {
+                // 1 minute or more - show minutes and seconds
+                this.countdownEl.textContent = window.i18n.t('departsIn', { minutes, seconds });
+            }
         }
     }
 
