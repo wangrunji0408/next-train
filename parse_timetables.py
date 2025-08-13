@@ -87,6 +87,8 @@ def extract_operating_time(lines: List[List[str]]) -> Optional[str]:
             return "平日"
         elif "星期五" in line_text or "周五" in line_text or "Friday" in line_text:
             return "星期五"
+        elif "周一至周四" in line_text and "双休日" in line_text:
+            return "平日"
     return None
 
 
