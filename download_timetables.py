@@ -5,15 +5,12 @@ Downloads timetable images from all Beijing subway operators
 """
 
 import requests
-import os
 import re
 from pathlib import Path
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urljoin
 from bs4 import BeautifulSoup
-import time
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
-import threading
 
 # Configure logging
 logging.basicConfig(
