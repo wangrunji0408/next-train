@@ -470,6 +470,7 @@ class NextTrainApp {
         } else {
             this.trainTimeEl.classList.remove('departed');
         }
+        this.updateCountdown();
     }
 
     getAllTrains() {
