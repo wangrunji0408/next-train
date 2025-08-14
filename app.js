@@ -462,7 +462,17 @@ class NextTrainApp {
             return;
         }
 
-        this.trainTimeEl.textContent = currentTrain.time;
+        // Display time with special tags for first and last trains
+        let displayHTML = currentTrain.time;
+        if (this.currentTrainIndex === 0) {
+            const firstTrainTag = window.i18n.t('firstTrain');
+            displayHTML = '<div style="position: relative; display: inline-block;"><span style="position: absolute; right: -40px; padding: 1px 2px; border: 1px solid rgba(255,255,255,0.6); border-radius: 2px; font-size: 0.4em;">' + firstTrainTag + '</span>' + currentTrain.time + '</div>';
+        } else if (this.currentTrainIndex === allTrains.length - 1) {
+            const lastTrainTag = window.i18n.t('lastTrain');
+            displayHTML = '<div style="position: relative; display: inline-block;"><span style="position: absolute; right: -40px; padding: 1px 2px; border: 1px solid rgba(255,255,255,0.6); border-radius: 2px; font-size: 0.4em;">' + lastTrainTag + '</span>' + currentTrain.time + '</div>';
+        }
+
+        this.trainTimeEl.innerHTML = displayHTML;
 
         // Apply visual styling for departed trains
         if (currentTrain.isPast) {

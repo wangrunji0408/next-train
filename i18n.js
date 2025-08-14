@@ -60,6 +60,8 @@ class I18n {
                 lineNumber: '{number}号线',
                 lineNameNumeric: '{number}号线',
                 lineNameNonNumeric: '{name}线',
+                firstTrain: '首',
+                lastTrain: '末',
                 
                 // Search and input
                 enterStationName: '输入地铁站名：',
@@ -112,6 +114,8 @@ class I18n {
                 lineNumber: 'Line {number}',
                 lineNameNumeric: 'Line {number}',
                 lineNameNonNumeric: '{name} Line',
+                firstTrain: '1st',
+                lastTrain: 'Last',
                 
                 // Search and input
                 enterStationName: 'Enter station name:',
