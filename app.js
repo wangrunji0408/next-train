@@ -453,6 +453,8 @@ class NextTrainApp {
     }
 
     updateTrainInfo() {
+        const beijingTime = this.getBeijingTime();
+        const currentTime = beijingTime.getHours() * 60 + beijingTime.getMinutes();
         const allTrains = this.getAllTrains();
         const currentTrain = allTrains[this.currentTrainIndex];
 
@@ -475,7 +477,7 @@ class NextTrainApp {
         this.trainTimeEl.innerHTML = displayHTML;
 
         // Apply visual styling for departed trains
-        if (currentTrain.isPast) {
+        if (currentTrain.time < currentTime) {
             this.trainTimeEl.classList.add('departed');
         } else {
             this.trainTimeEl.classList.remove('departed');
@@ -484,8 +486,6 @@ class NextTrainApp {
     }
 
     getAllTrains() {
-        const beijingTime = this.getBeijingTime();
-        const currentTime = beijingTime.getHours() * 60 + beijingTime.getMinutes();
         const times = this.getCurrentScheduleTimes();
 
         if (!times || times.length === 0) {
@@ -498,12 +498,8 @@ class NextTrainApp {
             return {
                 time: time,
                 minutes: minutes,
-                isPast: minutes < currentTime,
             };
         });
-
-        // Sort by time
-        trains.sort((a, b) => a.minutes - b.minutes);
 
         return trains;
     }
