@@ -127,7 +127,7 @@ def extract_schedule_times(lines: List[List[str]]) -> List[str]:
             if not line[0].isnumeric() or "表" in line or line_text == "520":
                 continue  # skip footer
             if last_hour is None and not (
-                line_text[0] in "567" or line_text[0:2] in ["05", "06", "07"]
+                line_text[0] in "4567" or line_text[0:2] in ["04", "05", "06", "07"]
             ):
                 continue
             if line_text[0] in "456789":
