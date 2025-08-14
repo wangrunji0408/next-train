@@ -133,7 +133,7 @@ def extract_schedule_times(lines: List[List[str]]) -> List[str]:
             if line_text[0] in "456789":
                 hour = int(line_text[0])
                 line_text = line_text[1:]  # Remove hour from text
-            elif line_text[0:2] in [f"{x:02d}" for x in range(5, 24)] + ["00"]:
+            elif line_text[0:2] in [f"{x:02d}" for x in range(5, 25)] + ["00"]:
                 hour = int(line_text[0:2])
                 line_text = line_text[2:]  # Remove hour from text
             else:
@@ -162,6 +162,7 @@ THRESHOLDS = {
     "燕房": 192,
     "大兴机场": 128,
     "19": 128,
+    "10": 75,
 }
 
 
