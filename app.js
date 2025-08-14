@@ -16,6 +16,7 @@ class NextTrainApp {
         this.lineSelectorEl = document.getElementById('lineSelector');
         this.directionSelectorEl = document.getElementById('directionSelector');
         this.trainTimeEl = document.getElementById('trainTime');
+        this.trainTagEl = document.getElementById('trainTag');
         this.countdownEl = document.getElementById('countdown');
         this.sortByDistanceBtnEl = document.getElementById('sortByDistanceBtn');
         this.inputStationBtnEl = document.getElementById('inputStationBtn');
@@ -460,24 +461,27 @@ class NextTrainApp {
 
         if (!currentTrain) {
             this.trainTimeEl.textContent = window.i18n.t('trainTimeDefault');
+            this.trainTagEl.style.display = 'none';
             this.countdownEl.textContent = window.i18n.t('noService');
             return;
         }
 
-        // Display time with special tags for first and last trains
-        let displayHTML = currentTrain.time;
+        // Display time
+        this.trainTimeEl.textContent = currentTrain.time;
+
+        // Display special tags for first and last trains
         if (this.currentTrainIndex === 0) {
-            const firstTrainTag = window.i18n.t('firstTrain');
-            displayHTML = '<div style="position: relative; display: inline-block;"><span style="position: absolute; right: -40px; padding: 1px 2px; border: 1px solid rgba(255,255,255,0.6); border-radius: 2px; font-size: 0.4em;">' + firstTrainTag + '</span>' + currentTrain.time + '</div>';
+            this.trainTagEl.textContent = window.i18n.t('firstTrain');
+            this.trainTagEl.style.display = 'block';
         } else if (this.currentTrainIndex === allTrains.length - 1) {
-            const lastTrainTag = window.i18n.t('lastTrain');
-            displayHTML = '<div style="position: relative; display: inline-block;"><span style="position: absolute; right: -40px; padding: 1px 2px; border: 1px solid rgba(255,255,255,0.6); border-radius: 2px; font-size: 0.4em;">' + lastTrainTag + '</span>' + currentTrain.time + '</div>';
+            this.trainTagEl.textContent = window.i18n.t('lastTrain');
+            this.trainTagEl.style.display = 'block';
+        } else {
+            this.trainTagEl.style.display = 'none';
         }
 
-        this.trainTimeEl.innerHTML = displayHTML;
-
         // Apply visual styling for departed trains
-        if (currentTrain.time < currentTime) {
+        if (currentTrain.minutes < currentTime) {
             this.trainTimeEl.classList.add('departed');
         } else {
             this.trainTimeEl.classList.remove('departed');

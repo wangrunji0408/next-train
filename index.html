@@ -173,6 +173,16 @@
             text-decoration: line-through;
         }
 
+        .train-tag {
+            position: absolute;
+            right: -40px;
+            top: 0;
+            padding: 1px 2px;
+            border: 1px solid rgba(255,255,255,0.6);
+            border-radius: 2px;
+            display: none;
+        }
+
         .countdown {
             font-size: 18px;
             opacity: 0.9;
@@ -317,7 +327,10 @@
                     <div class="click-indicator left">‹</div>
                     <div class="click-indicator right">›</div>
                 </div>
-                <div class="train-time" id="trainTime">--:--</div>
+                <div style="position: relative; display: inline-block;">
+                    <div class="train-time" id="trainTime">--:--</div>
+                    <div class="train-tag" id="trainTag"></div>
+                </div>
                 <div class="countdown" id="countdown" data-i18n="calculating">计算中...</div>
             </div>
         </div>
