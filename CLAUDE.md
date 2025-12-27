@@ -50,7 +50,39 @@
 
 ### 启动开发服务器
 ```bash
-python3 serve_https.py  # HTTPS服务器（定位功能需要）
-# 或
 python3 -m http.server 8000  # 简单HTTP服务器
 ```
+
+## 更新时刻表数据
+
+### 更新流程
+
+当地铁有新线路或站点开通时，按以下步骤更新数据：
+
+1. **下载时刻表图片**
+   ```bash
+   python3 scripts/download_timetables.py
+   ```
+   - 从北京地铁官网、京港地铁、北京轨道运营三个来源下载
+   - 图片保存到 `timetables/` 目录，命名格式：`线路-站名-编号.jpg`
+
+2. **解析时刻表**
+   ```bash
+   python3 scripts/parse_timetables.py
+   ```
+   - 使用OCR识别时刻表图片中的时间信息
+   - 生成 `timetable.jsonl` 文件
+   - 注意：脚本默认解析所有图片，如只需更新特定线路，需修改脚本中的文件过滤逻辑
+
+3. **更新站点坐标**
+   ```bash
+   python3 scripts/fetch_osm_subway.py
+   ```
+   - 从OpenStreetMap获取最新的地铁站点GPS坐标
+   - 自动更新 `data/routes.json`
+
+### 数据源
+
+- **北京地铁**: https://www.bjsubway.com/station/xltcx/
+- **京港地铁**: https://www.mtr.bj.cn/service/line/
+- **北京轨道运营**: https://www.bjmoa.cn/trainTimeList_363.html
