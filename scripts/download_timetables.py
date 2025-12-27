@@ -6,6 +6,7 @@ Downloads timetable images from all Beijing subway operators
 
 import requests
 import re
+import argparse
 from pathlib import Path
 from urllib.parse import urljoin
 from bs4 import BeautifulSoup
@@ -108,9 +109,23 @@ class SubwayTimetableDownloader:
         except Exception as e:
             return f"Error processing {station_url}: {e}"
 
-    def download_bjsubway(self):
+    def download_bjsubway(self, line_filter=None):
         """Download timetables from bjsubway.com with concurrent processing"""
-        logger.info("Starting Beijing Subway (bjsubway.com) download...")
+        if line_filter:
+            logger.info(
+                f"Starting Beijing Subway (bjsubway.com) download for line {line_filter}..."
+            )
+        else:
+            logger.info("Starting Beijing Subway (bjsubway.com) download...")
+
+        # Line code mapping for special lines
+        line_code_map = {
+            "昌平": "cp",
+            "房山": "fs",
+            "八通": "bt",
+            "亦庄": "yz",
+            "首都机场": "jc",
+        }
 
         # Get main station list page
         response = self.session.get("https://www.bjsubway.com/station/xltcx/")
@@ -121,9 +136,40 @@ class SubwayTimetableDownloader:
         for link in soup.find_all("a", href=True):
             href = link["href"]
             if "/station/xltcx/" in href and ".html" in href:
-                station_links.append(urljoin("https://www.bjsubway.com", href))
+                # If line filter is specified, check if URL matches
+                if line_filter:
+                    # Extract line code from URL path like /line1/ or /linecp/
+                    line_match = re.search(r"/line([^/]+)/", href)
+                    if line_match:
+                        url_line_code = line_match.group(1)
+
+                        # Check if it matches the filter
+                        # For numeric lines, compare directly
+                        if url_line_code == line_filter:
+                            station_links.append(
+                                urljoin("https://www.bjsubway.com", href)
+                            )
+                        # For named lines, check if filter matches the code or the name
+                        elif (
+                            line_filter in line_code_map
+                            and line_code_map[line_filter] == url_line_code
+                        ):
+                            station_links.append(
+                                urljoin("https://www.bjsubway.com", href)
+                            )
+                        # Also support reverse lookup (e.g., user inputs "cp" for 昌平线)
+                        elif line_filter == url_line_code:
+                            station_links.append(
+                                urljoin("https://www.bjsubway.com", href)
+                            )
+                else:
+                    station_links.append(urljoin("https://www.bjsubway.com", href))
 
         logger.info(f"Found {len(station_links)} station links")
+
+        if line_filter and len(station_links) == 0:
+            logger.warning(f"No stations found for line {line_filter} on bjsubway.com")
+            return
 
         # Process stations concurrently with max 32 workers
         with ThreadPoolExecutor(max_workers=32) as executor:
@@ -196,11 +242,32 @@ class SubwayTimetableDownloader:
         except Exception as e:
             return f"Error processing {station_url}: {e}"
 
-    def download_mtr_beijing(self):
+    def download_mtr_beijing(self, line_filter=None):
         """Download timetables from mtr.bj.cn with concurrent processing"""
-        logger.info("Starting MTR Beijing download...")
+        if line_filter:
+            logger.info(f"Starting MTR Beijing download for line {line_filter}...")
+        else:
+            logger.info("Starting MTR Beijing download...")
 
         lines = [4, 14, 16, 17]
+
+        # Filter lines if specified
+        if line_filter:
+            try:
+                line_num = int(line_filter)
+                if line_num in lines:
+                    lines = [line_num]
+                else:
+                    logger.warning(
+                        f"Line {line_filter} is not operated by MTR Beijing. Skipping MTR Beijing download."
+                    )
+                    return
+            except ValueError:
+                logger.warning(
+                    f"Line {line_filter} is not operated by MTR Beijing. Skipping MTR Beijing download."
+                )
+                return
+
         all_station_data = []
 
         # Collect all station data first
@@ -254,12 +321,34 @@ class SubwayTimetableDownloader:
         except Exception as e:
             return f"Error downloading {filename}: {e}"
 
-    def download_bjmoa(self):
+    def download_bjmoa(self, line_filter=None):
         """Download timetables from bjmoa.cn with concurrent processing"""
-        logger.info("Starting Beijing Rail Operations download...")
+        if line_filter:
+            logger.info(
+                f"Starting Beijing Rail Operations download for line {line_filter}..."
+            )
+        else:
+            logger.info("Starting Beijing Rail Operations download...")
 
         # Line mapping
         lines = {24: "燕房", 26: "大兴机场", 16: "19"}
+
+        # Filter lines if specified
+        if line_filter:
+            # Check if line_filter matches any line_name
+            matching_lines = {
+                line_id: line_name
+                for line_id, line_name in lines.items()
+                if line_name == line_filter or str(line_id) == line_filter
+            }
+            if matching_lines:
+                lines = matching_lines
+            else:
+                logger.warning(
+                    f"Line {line_filter} is not operated by BJMOA. Skipping BJMOA download."
+                )
+                return
+
         all_image_data = []
 
         # Collect all image data first
@@ -333,22 +422,25 @@ class SubwayTimetableDownloader:
 
         logger.info("BJMOA download completed")
 
-    def download_all(self):
+    def download_all(self, line_filter=None):
         """Download timetables from all sources"""
-        logger.info("Starting complete timetable download...")
+        if line_filter:
+            logger.info(f"Starting timetable download for line {line_filter}...")
+        else:
+            logger.info("Starting complete timetable download...")
 
         try:
-            self.download_bjsubway()
+            self.download_bjsubway(line_filter)
         except Exception as e:
             logger.error(f"BJSubway download failed: {e}")
 
         try:
-            self.download_mtr_beijing()
+            self.download_mtr_beijing(line_filter)
         except Exception as e:
             logger.error(f"MTR Beijing download failed: {e}")
 
         try:
-            self.download_bjmoa()
+            self.download_bjmoa(line_filter)
         except Exception as e:
             logger.error(f"BJMOA download failed: {e}")
 
@@ -363,8 +455,42 @@ class SubwayTimetableDownloader:
 
 
 def main():
-    downloader = SubwayTimetableDownloader()
-    downloader.download_all()
+    parser = argparse.ArgumentParser(
+        description="Download Beijing subway timetable images from official sources",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Download all lines
+  python download_timetables.py
+
+  # Download a specific line by number
+  python download_timetables.py --line 1
+  python download_timetables.py -l 4
+
+Sources:
+  - Beijing Subway: https://www.bjsubway.com (Lines 1, 2, 5, 6, 7, 8, 9, 10, 13, 15, S1, 八通, 昌平, 亦庄, 房山, 西郊, 首都机场)
+  - MTR Beijing: https://www.mtr.bj.cn (Lines 4, 14, 16, 17)
+  - BJMOA: https://www.bjmoa.cn (Lines 燕房, 大兴机场, 19)
+        """,
+    )
+    parser.add_argument(
+        "-l",
+        "--line",
+        type=str,
+        help="Specify a single line to download (e.g., 1, 4, 燕房, 大兴机场)",
+    )
+    parser.add_argument(
+        "-o",
+        "--output",
+        type=str,
+        default="timetables",
+        help="Output directory for downloaded timetables (default: timetables)",
+    )
+
+    args = parser.parse_args()
+
+    downloader = SubwayTimetableDownloader(output_dir=args.output)
+    downloader.download_all(line_filter=args.line)
 
 
 if __name__ == "__main__":
