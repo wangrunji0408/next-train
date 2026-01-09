@@ -12,6 +12,9 @@ from urllib.parse import urljoin
 from bs4 import BeautifulSoup
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import time
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 # Configure logging
 logging.basicConfig(
@@ -24,50 +27,115 @@ class SubwayTimetableDownloader:
     def __init__(self, output_dir="timetables"):
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(exist_ok=True)
-        self.session = requests.Session()
-        self.session.headers.update(
+        self.session = self._create_session()
+        self.url_log_file = self.output_dir / "downloaded_urls.txt"
+        self.url_log = open(self.url_log_file, "a", encoding="utf-8")
+
+    def _create_session(self):
+        """Create a session with retry strategy and connection pooling"""
+        session = requests.Session()
+
+        # Configure retry strategy
+        retry_strategy = Retry(
+            total=3,  # Total number of retries
+            backoff_factor=1,  # Wait 1, 2, 4 seconds between retries
+            status_forcelist=[429, 500, 502, 503, 504],  # Retry on these status codes
+            allowed_methods=["HEAD", "GET", "OPTIONS"],  # Methods to retry
+        )
+
+        # Mount adapters with retry strategy and connection pooling
+        adapter = HTTPAdapter(
+            max_retries=retry_strategy,
+            pool_connections=10,  # Limit connection pool size
+            pool_maxsize=10,
+            pool_block=True,  # Block when pool is full instead of creating new connections
+        )
+        session.mount("http://", adapter)
+        session.mount("https://", adapter)
+
+        # Set headers
+        session.headers.update(
             {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
             }
         )
-        self.url_log_file = self.output_dir / "downloaded_urls.txt"
-        self.url_log = open(self.url_log_file, "a", encoding="utf-8")
 
-    def download_image(self, url, filename):
-        """Download an image from URL and save with given filename"""
-        try:
-            response = self.session.get(url, stream=True)
-            response.raise_for_status()
+        return session
 
-            filepath = self.output_dir / filename
-            filepath.parent.mkdir(parents=True, exist_ok=True)
+    def download_image(self, url, filename, max_retries=3):
+        """Download an image from URL and save with given filename with retry logic"""
+        filepath = self.output_dir / filename
+        filepath.parent.mkdir(parents=True, exist_ok=True)
 
-            with open(filepath, "wb") as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    f.write(chunk)
+        for attempt in range(max_retries):
+            try:
+                # Add timeout to prevent hanging
+                response = self.session.get(url, stream=True, timeout=30)
+                response.raise_for_status()
 
-            # Log URL and filename (thread-safe)
-            self.url_log.write(f"{filename}\t{url}\n")
+                # Write to temporary file first
+                temp_filepath = filepath.with_suffix(filepath.suffix + ".tmp")
 
-            logger.info(f"Downloaded: {filename}")
-            return True
-        except Exception as e:
-            logger.error(f"Failed to download {url}: {e}")
-            return False
+                with open(temp_filepath, "wb") as f:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        if chunk:  # Filter out keep-alive chunks
+                            f.write(chunk)
+
+                # Verify file size matches Content-Length if available
+                if "content-length" in response.headers:
+                    expected_size = int(response.headers["content-length"])
+                    actual_size = temp_filepath.stat().st_size
+                    if actual_size != expected_size:
+                        temp_filepath.unlink()
+                        raise Exception(
+                            f"Incomplete download: expected {expected_size} bytes, got {actual_size} bytes"
+                        )
+
+                # Move temp file to final location
+                temp_filepath.rename(filepath)
+
+                # Log URL and filename (thread-safe)
+                self.url_log.write(f"{filename}\t{url}\n")
+                self.url_log.flush()
+
+                logger.info(f"Downloaded: {filename}")
+                return True
+
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    wait_time = 2**attempt  # Exponential backoff: 1, 2, 4 seconds
+                    logger.warning(
+                        f"Attempt {attempt + 1}/{max_retries} failed for {url}: {e}. Retrying in {wait_time}s..."
+                    )
+                    time.sleep(wait_time)
+                    # Clean up temp file if it exists
+                    temp_filepath = filepath.with_suffix(filepath.suffix + ".tmp")
+                    if temp_filepath.exists():
+                        temp_filepath.unlink()
+                else:
+                    logger.error(
+                        f"Failed to download {url} after {max_retries} attempts: {e}"
+                    )
+                    # Clean up temp file if it exists
+                    temp_filepath = filepath.with_suffix(filepath.suffix + ".tmp")
+                    if temp_filepath.exists():
+                        temp_filepath.unlink()
+                    # Clean up partial file if it exists
+                    if filepath.exists():
+                        filepath.unlink()
+                    return False
+
+        return False
 
     def process_bjsubway_station(self, station_url):
         """Process a single Beijing Subway station page"""
         try:
-            # Create a new session for this thread
-            session = requests.Session()
-            session.headers.update(
-                {
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-                }
-            )
+            # Create a new session for this thread with proper configuration
+            session = self._create_session()
 
-            # Get station page
-            response = session.get(station_url)
+            # Get station page with timeout
+            response = session.get(station_url, timeout=30)
+            response.raise_for_status()
             soup = BeautifulSoup(response.content, "html.parser")
 
             # Extract line info from URL (for potential future use)
@@ -104,6 +172,8 @@ class SubwayTimetableDownloader:
                         if self.download_image(img_url, filename):
                             images_downloaded += 1
 
+            # Close the session to free up connections
+            session.close()
             return f"Processed {station_url}: {images_downloaded} images downloaded"
 
         except Exception as e:
@@ -171,8 +241,8 @@ class SubwayTimetableDownloader:
             logger.warning(f"No stations found for line {line_filter} on bjsubway.com")
             return
 
-        # Process stations concurrently with max 32 workers
-        with ThreadPoolExecutor(max_workers=32) as executor:
+        # Process stations concurrently with reduced workers to avoid connection pool issues
+        with ThreadPoolExecutor(max_workers=8) as executor:
             # Submit all tasks
             future_to_url = {
                 executor.submit(self.process_bjsubway_station, url): url
@@ -196,19 +266,15 @@ class SubwayTimetableDownloader:
         """Process a single MTR Beijing station page"""
         station_url, line_num = station_data
         try:
-            # Create a new session for this thread
-            session = requests.Session()
-            session.headers.update(
-                {
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-                }
-            )
+            # Create a new session for this thread with proper configuration
+            session = self._create_session()
 
             # Add #schedule fragment to URL
             schedule_url = station_url + "#schedule"
 
-            # Get station schedule page
-            response = session.get(schedule_url)
+            # Get station schedule page with timeout
+            response = session.get(schedule_url, timeout=30)
+            response.raise_for_status()
             soup = BeautifulSoup(response.content, "html.parser")
 
             # Extract station name from page title or content
@@ -237,6 +303,8 @@ class SubwayTimetableDownloader:
                     if self.download_image(img_url, filename):
                         images_downloaded += 1
 
+            # Close the session to free up connections
+            session.close()
             return f"Processed {station_url}: {images_downloaded} images downloaded"
 
         except Exception as e:
@@ -289,8 +357,8 @@ class SubwayTimetableDownloader:
 
         logger.info(f"Found {len(all_station_data)} total MTR stations")
 
-        # Process all stations concurrently with max 32 workers
-        with ThreadPoolExecutor(max_workers=32) as executor:
+        # Process all stations concurrently with reduced workers to avoid connection pool issues
+        with ThreadPoolExecutor(max_workers=8) as executor:
             # Submit all tasks
             future_to_data = {
                 executor.submit(self.process_mtr_station, data): data
@@ -401,8 +469,8 @@ class SubwayTimetableDownloader:
 
         logger.info(f"Found {len(all_image_data)} total BJMOA images")
 
-        # Process all images concurrently with max 32 workers
-        with ThreadPoolExecutor(max_workers=32) as executor:
+        # Process all images concurrently with reduced workers to avoid connection pool issues
+        with ThreadPoolExecutor(max_workers=8) as executor:
             # Submit all tasks
             future_to_data = {
                 executor.submit(self.process_bjmoa_image, data): data
