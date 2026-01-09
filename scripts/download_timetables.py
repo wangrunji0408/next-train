@@ -15,6 +15,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+import json
 
 # Configure logging
 logging.basicConfig(
@@ -30,6 +31,8 @@ class SubwayTimetableDownloader:
         self.session = self._create_session()
         self.url_log_file = self.output_dir / "downloaded_urls.txt"
         self.url_log = open(self.url_log_file, "a", encoding="utf-8")
+        self.update_cache_file = self.output_dir / "line_updates.json"
+        self.update_cache = self._load_update_cache()
 
     def _create_session(self):
         """Create a session with retry strategy and connection pooling"""
@@ -61,6 +64,117 @@ class SubwayTimetableDownloader:
         )
 
         return session
+
+    def _load_update_cache(self):
+        """Load the cache of line update dates"""
+        if self.update_cache_file.exists():
+            try:
+                with open(self.update_cache_file, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception as e:
+                logger.warning(f"Failed to load update cache: {e}")
+                return {}
+        return {}
+
+    def _save_update_cache(self):
+        """Save the cache of line update dates"""
+        try:
+            with open(self.update_cache_file, "w", encoding="utf-8") as f:
+                json.dump(self.update_cache, f, ensure_ascii=False, indent=2)
+            logger.info(f"Update cache saved to {self.update_cache_file}")
+        except Exception as e:
+            logger.error(f"Failed to save update cache: {e}")
+
+    def _extract_update_date(self, soup):
+        """Extract update date from a station page (format: YYYY年MM月更新)"""
+        try:
+            # Look for text matching pattern "YYYY年MM月更新"
+            text = soup.get_text()
+            match = re.search(r'(\d{4})年(\d{1,2})月更新', text)
+            if match:
+                year = match.group(1)
+                month = match.group(2).zfill(2)  # Pad month with zero
+                return f"{year}-{month}"
+            return None
+        except Exception as e:
+            logger.debug(f"Failed to extract update date: {e}")
+            return None
+
+    def _get_line_update_date(self, line_code):
+        """Get the update date for a line by checking station pages"""
+        try:
+            # Construct URL for the line's station list
+            response = self.session.get(
+                "https://www.bjsubway.com/station/xltcx/", timeout=30
+            )
+            soup = BeautifulSoup(response.content, "html.parser")
+
+            # Find all station links for this line and try each one
+            # Note: Some lines use "lines" (plural) instead of "line" in URLs
+            station_links = []
+            for link in soup.find_all("a", href=True):
+                href = link["href"]
+                # Check both "line{code}" and "lines{code}" patterns
+                if (f"/line{line_code}/" in href or f"/lines{line_code}/" in href) and ".html" in href:
+                    station_links.append(urljoin("https://www.bjsubway.com", href))
+
+            if not station_links:
+                logger.warning(f"No station links found for line {line_code}")
+                return None
+
+            # Try up to 3 stations to find update date
+            for station_url in station_links[:3]:
+                try:
+                    # Get station page
+                    station_response = self.session.get(station_url, timeout=30)
+                    station_soup = BeautifulSoup(station_response.content, "html.parser")
+
+                    # Extract update date
+                    update_date = self._extract_update_date(station_soup)
+                    if update_date:
+                        logger.info(f"Line {line_code} update date: {update_date}")
+                        return update_date
+                except Exception as e:
+                    logger.debug(f"Failed to get update date from {station_url}: {e}")
+                    continue
+
+            logger.warning(f"Could not find update date for line {line_code}")
+            return None
+
+        except Exception as e:
+            logger.error(f"Failed to get update date for line {line_code}: {e}")
+            return None
+
+    def _should_update_line(self, line_code):
+        """Check if a line needs to be updated based on the update date"""
+        current_update = self._get_line_update_date(line_code)
+
+        if current_update is None:
+            # If we can't get the update date, download anyway
+            logger.info(f"Line {line_code}: No update date found, downloading...")
+            return True
+
+        cached_update = self.update_cache.get(f"bjsubway_line_{line_code}")
+
+        if cached_update is None:
+            # First time downloading this line
+            logger.info(f"Line {line_code}: First download, update date {current_update}")
+            self.update_cache[f"bjsubway_line_{line_code}"] = current_update
+            return True
+
+        if current_update != cached_update:
+            # Update date changed
+            logger.info(
+                f"Line {line_code}: Update date changed from {cached_update} to {current_update}, downloading..."
+            )
+            self.update_cache[f"bjsubway_line_{line_code}"] = current_update
+            return True
+
+        # Update date unchanged
+        logger.info(
+            f"Line {line_code}: Update date unchanged ({current_update}), skipping download"
+        )
+        return False
 
     def download_image(self, url, filename, max_retries=3):
         """Download an image from URL and save with given filename with retry logic"""
@@ -138,9 +252,6 @@ class SubwayTimetableDownloader:
             response.raise_for_status()
             soup = BeautifulSoup(response.content, "html.parser")
 
-            # Extract line info from URL (for potential future use)
-            url_parts = station_url.split("/")
-
             images_downloaded = 0
             # Find timetable images
             img_count = 0
@@ -179,8 +290,13 @@ class SubwayTimetableDownloader:
         except Exception as e:
             return f"Error processing {station_url}: {e}"
 
-    def download_bjsubway(self, line_filter=None):
-        """Download timetables from bjsubway.com with concurrent processing"""
+    def download_bjsubway(self, line_filter=None, force=False):
+        """Download timetables from bjsubway.com with concurrent processing
+
+        Args:
+            line_filter: Specific line to download (e.g., "1", "6", "昌平")
+            force: If True, skip update date check and download anyway
+        """
         if line_filter:
             logger.info(
                 f"Starting Beijing Subway (bjsubway.com) download for line {line_filter}..."
@@ -197,6 +313,17 @@ class SubwayTimetableDownloader:
             "首都机场": "jc",
         }
 
+        # Check if we need to update this line (unless forced or downloading all lines)
+        if line_filter and not force:
+            # Determine the line code for update check
+            line_code_for_check = line_filter
+            if line_filter in line_code_map:
+                line_code_for_check = line_code_map[line_filter]
+
+            if not self._should_update_line(line_code_for_check):
+                logger.info(f"Skipping line {line_filter} (no update needed)")
+                return
+
         # Get main station list page
         response = self.session.get("https://www.bjsubway.com/station/xltcx/")
         soup = BeautifulSoup(response.content, "html.parser")
@@ -208,8 +335,8 @@ class SubwayTimetableDownloader:
             if "/station/xltcx/" in href and ".html" in href:
                 # If line filter is specified, check if URL matches
                 if line_filter:
-                    # Extract line code from URL path like /line1/ or /linecp/
-                    line_match = re.search(r"/line([^/]+)/", href)
+                    # Extract line code from URL path like /line1/, /linecp/, or /lines7/
+                    line_match = re.search(r"/lines?([^/]+)/", href)
                     if line_match:
                         url_line_code = line_match.group(1)
 
@@ -260,6 +387,8 @@ class SubwayTimetableDownloader:
                 except Exception as exc:
                     logger.error(f"Station {url} generated an exception: {exc}")
 
+        # Save update cache after successful download
+        self._save_update_cache()
         logger.info("Beijing Subway download completed")
 
     def process_mtr_station(self, station_data):
@@ -490,15 +619,20 @@ class SubwayTimetableDownloader:
 
         logger.info("BJMOA download completed")
 
-    def download_all(self, line_filter=None):
-        """Download timetables from all sources"""
+    def download_all(self, line_filter=None, force=False):
+        """Download timetables from all sources
+
+        Args:
+            line_filter: Specific line to download
+            force: If True, skip update date check and download anyway
+        """
         if line_filter:
             logger.info(f"Starting timetable download for line {line_filter}...")
         else:
             logger.info("Starting complete timetable download...")
 
         try:
-            self.download_bjsubway(line_filter)
+            self.download_bjsubway(line_filter, force=force)
         except Exception as e:
             logger.error(f"BJSubway download failed: {e}")
 
@@ -554,11 +688,17 @@ Sources:
         default="timetables",
         help="Output directory for downloaded timetables (default: timetables)",
     )
+    parser.add_argument(
+        "-f",
+        "--force",
+        action="store_true",
+        help="Force download even if update date hasn't changed (for Beijing Subway only)",
+    )
 
     args = parser.parse_args()
 
     downloader = SubwayTimetableDownloader(output_dir=args.output)
-    downloader.download_all(line_filter=args.line)
+    downloader.download_all(line_filter=args.line, force=args.force)
 
 
 if __name__ == "__main__":
