@@ -294,6 +294,225 @@ def auto_correct_destination(
     return best_match
 
 
+def group_text_by_columns(annotations: List[Tuple], eps: float = 0.05) -> List[List[str]]:
+    """
+    Group OCR annotations by vertical columns based on x-coordinate proximity.
+    Used for Line 18 where text is arranged vertically.
+
+    Args:
+        annotations: List of (text, confidence, bbox) tuples
+        eps: Maximum x-coordinate difference to consider same column (as fraction of image width)
+
+    Returns:
+        List of columns, each containing annotations for that column
+    """
+    if not annotations:
+        return []
+
+    # Sort by x-coordinate (first element of bbox)
+    sorted_annotations = sorted(annotations, key=lambda x: x[2][0])
+
+    # Estimate image width from annotations
+    max_x = max(ann[2][0] for ann in annotations)
+    eps_pixels = max_x * eps
+
+    columns = []
+    current_column = [sorted_annotations[0]]
+    current_x = sorted_annotations[0][2][0]
+
+    for annotation in sorted_annotations[1:]:
+        x_coord = annotation[2][0]
+
+        if abs(x_coord - current_x) <= eps_pixels:
+            # Same column
+            current_column.append(annotation)
+        else:
+            # New column
+            # Sort current column by y-coordinate (top to bottom)
+            current_column = [
+                s for s, _, _ in sorted(current_column, key=lambda x: x[2][1])
+            ]
+            columns.append(current_column)
+            current_column = [annotation]
+            current_x = x_coord
+
+    # Add the last column
+    if current_column:
+        current_column = [s for s, _, _ in sorted(current_column, key=lambda x: x[2][1])]
+        columns.append(current_column)
+
+    return columns
+
+
+def parse_line18_format(
+    grayscale_img: Image.Image,
+    binary_img: Image.Image,
+    image_path: str,
+    route_stations: Dict[str, List[str]],
+    suffix: str = ""
+) -> List[Dict]:
+    """
+    Special parser for Line 18 timetables where:
+    - Destination and operating_time are written vertically
+    - Two directions are arranged side-by-side horizontally
+
+    Returns list of 2 results (left side and right side)
+    """
+    os.makedirs("annotations", exist_ok=True)
+
+    annotation_path_gray = f"annotations/{Path(image_path).stem}{suffix}_gray.png"
+    annotation_path_binary = f"annotations/{Path(image_path).stem}{suffix}_binary.png"
+
+    # Perform OCR on grayscale
+    ocr_gray = ocrmac.OCR(grayscale_img, framework="livetext")
+    annotations_gray = ocr_gray.recognize()
+    ocr_gray.annotate_PIL().save(annotation_path_gray)
+
+    # Group all text by vertical columns
+    columns_gray = group_text_by_columns(annotations_gray)
+
+    # Extract all destinations and operating_times from columns
+    # Line 18 format has TWO timetables side-by-side, each with its own destination/operating_time
+    destinations = []
+    operating_times = []
+
+    for column in columns_gray:
+        column_text = "".join(column)
+
+        # For vertical text, OCR may read bottom-to-top, so try both directions
+        for text in [column_text, column_text[::-1]]:
+            # Remove numbers and English to clean up the text for matching
+            clean_text = re.sub(r'[a-zA-Z0-9]+', '', text)
+
+            # Extract destination
+            match = re.search(r"[开牙去][往住注]?(.+?)站?(方向|To)", clean_text)
+            if match:
+                dest = match.group(1).strip()
+                if dest and dest not in destinations:
+                    destinations.append(dest)
+                    print(f"  -> Found destination: '{dest}'")
+
+            # Extract operating_time - check for the keywords in cleaned text
+            if "工作日" in clean_text or "作日" in clean_text:
+                if "工作日" not in operating_times:
+                    operating_times.append("工作日")
+                    print(f"  -> Found operating_time: '工作日'")
+            elif "双休日" in clean_text or "休日" in clean_text:
+                if "双休日" not in operating_times:
+                    operating_times.append("双休日")
+                    print(f"  -> Found operating_time: '双休日'")
+            elif "平日" in clean_text or "Ordinary" in text:
+                if "平日" not in operating_times:
+                    operating_times.append("平日")
+                    print(f"  -> Found operating_time: '平日'")
+
+    # For Line 18, we expect 2 destinations and 2 operating_times (one for each side)
+    # If we only found one destination, duplicate it
+    if len(destinations) == 1:
+        destinations.append(destinations[0])
+    elif len(destinations) == 0:
+        destinations = [None, None]
+
+    # Pad to exactly 2 items
+    while len(destinations) < 2:
+        destinations.append(None)
+
+    # Same for operating_times
+    if len(operating_times) == 0:
+        operating_times = [None, None]
+    elif len(operating_times) == 1:
+        # If only one, assume the other side is the opposite
+        if operating_times[0] == "工作日":
+            operating_times.append("双休日")
+        else:
+            operating_times.append("工作日")
+
+    while len(operating_times) < 2:
+        operating_times.append(None)
+
+    left_destination, right_destination = destinations[0], destinations[1]
+    left_operating_time, right_operating_time = operating_times[0], operating_times[1]
+
+    # Auto-correct destinations
+    route, station = extract_route_and_station(image_path)
+    if route_stations and route:
+        if left_destination:
+            corrected = auto_correct_destination(left_destination, route, route_stations)
+            if corrected != left_destination:
+                print(f"Auto-correct: '{left_destination}' -> '{corrected}'")
+            left_destination = corrected
+        if right_destination:
+            corrected = auto_correct_destination(right_destination, route, route_stations)
+            if corrected != right_destination:
+                print(f"Auto-correct: '{right_destination}' -> '{corrected}'")
+            right_destination = corrected
+
+    # Perform OCR on binary image for schedule_times
+    ocr_binary = ocrmac.OCR(binary_img, framework="livetext")
+    annotations_binary = ocr_binary.recognize()
+    ocr_binary.annotate_PIL().save(annotation_path_binary)
+
+    # Find split point using the x-coordinate of "双休日" or "Weekends" text from grayscale OCR
+    # This is more reliable than trying to find gaps
+    split_point = 0.5  # Default
+
+    # Look for weekend marker in grayscale annotations
+    # Check for "休" character which appears in "双休日"
+    weekend_x_positions = []
+    for text, _conf, bbox in annotations_gray:
+        clean = re.sub(r'[a-zA-Z0-9]+', '', text)
+        if "双休日" in clean or "休日" in clean or "休" in clean or "Weekends" in text:
+            weekend_x_positions.append(bbox[0])
+
+    # Use the rightmost "休" as the split point (in case there are multiple)
+    if weekend_x_positions:
+        split_point = max(weekend_x_positions)
+        print(f"  Using split point at x={split_point:.4f} (from '休' position)")
+    else:
+        print(f"  Using default split at x=0.5")
+
+    # Split binary annotations by left/right using the detected split point
+    left_annotations = [(text, conf, bbox) for text, conf, bbox in annotations_binary if bbox[0] < split_point]
+    right_annotations = [(text, conf, bbox) for text, conf, bbox in annotations_binary if bbox[0] >= split_point]
+
+    # Extract schedule times for each side
+    left_lines = group_text_by_lines(left_annotations)
+    right_lines = group_text_by_lines(right_annotations)
+
+    left_times = extract_schedule_times(left_lines)
+    right_times = extract_schedule_times(right_lines)
+
+    # Create results
+    results = []
+
+    for side_name, destination, operating_time, schedule_times in [
+        ("左", left_destination, left_operating_time, left_times),
+        ("右", right_destination, right_operating_time, right_times)
+    ]:
+        print(f"线路-{route}, 站名-{station}, 开往-{destination}, 时段-{operating_time} ({side_name})")
+        minutes = {}
+        for time in schedule_times:
+            hour, minute = map(int, time.split(":"))
+            minutes[hour] = minutes.get(hour, []) + [minute]
+        for hour, mins in sorted(minutes.items(), key=lambda x: 24 if x[0] == 0 else x[0]):
+            print(f"{hour:02}:", end="")
+            for minute in mins:
+                print(f" {minute:02}", end="")
+            print()
+
+        result = {
+            "filename": os.path.basename(image_path) + suffix,
+            "route": route,
+            "station": station,
+            "destination": destination,
+            "operating_time": operating_time,
+            "schedule_times": schedule_times,
+        }
+        results.append(result)
+
+    return results
+
+
 def parse_timetable_image(
     image_path: str, route_stations: Dict[str, List[str]] = None
 ) -> List[Dict]:
@@ -302,6 +521,10 @@ def parse_timetable_image(
     Returns list of results (multiple if image was split)
     """
     try:
+        # Check if this is Line 18 (special format)
+        route, station = extract_route_and_station(image_path)
+        is_line18 = (route == "18")
+
         # Convert and binarize image for better OCR (may return multiple images if split)
         image_pairs = convert_and_binarize_image(image_path)
 
@@ -310,71 +533,78 @@ def parse_timetable_image(
 
         for i, (grayscale_img, binary_img) in enumerate(image_pairs):
             suffix = f"-{i+1}" if len(image_pairs) > 1 else ""
-            annotation_path_gray = (
-                f"annotations/{Path(image_path).stem}{suffix}_gray.png"
-            )
-            annotation_path_binary = (
-                f"annotations/{Path(image_path).stem}{suffix}_binary.png"
-            )
 
-            # Perform OCR on grayscale for destination and operating_time
-            ocr_gray = ocrmac.OCR(grayscale_img, framework="livetext")
-            annotations_gray = ocr_gray.recognize()
-            ocr_gray.annotate_PIL().save(annotation_path_gray)
-
-            # Group text by lines for grayscale OCR
-            lines_gray = group_text_by_lines(annotations_gray)
-
-            # Extract destination and operating_time from grayscale
-            destination = extract_destination(lines_gray)
-            operating_time = extract_operating_time(lines_gray)
-
-            # Auto-correct destination using route stations
-            route, station = extract_route_and_station(image_path)
-            if route_stations and route and destination:
-                corrected_destination = auto_correct_destination(
-                    destination, route, route_stations
+            if is_line18:
+                # Use special parser for Line 18
+                results.extend(parse_line18_format(
+                    grayscale_img, binary_img, image_path, route_stations, suffix
+                ))
+            else:
+                # Use standard parser for other lines
+                annotation_path_gray = (
+                    f"annotations/{Path(image_path).stem}{suffix}_gray.png"
                 )
-                if corrected_destination != destination:
-                    print(f"Auto-correct: '{destination}' -> '{corrected_destination}'")
-                destination = corrected_destination
+                annotation_path_binary = (
+                    f"annotations/{Path(image_path).stem}{suffix}_binary.png"
+                )
 
-            # Perform OCR on binary image for schedule_times
-            ocr_binary = ocrmac.OCR(binary_img, framework="livetext")
-            annotations_binary = ocr_binary.recognize()
-            ocr_binary.annotate_PIL().save(annotation_path_binary)
+                # Perform OCR on grayscale for destination and operating_time
+                ocr_gray = ocrmac.OCR(grayscale_img, framework="livetext")
+                annotations_gray = ocr_gray.recognize()
+                ocr_gray.annotate_PIL().save(annotation_path_gray)
 
-            # Group text by lines for binary OCR
-            lines_binary = group_text_by_lines(annotations_binary)
+                # Group text by lines for grayscale OCR
+                lines_gray = group_text_by_lines(annotations_gray)
 
-            # Extract schedule_times from binary
-            schedule_times = extract_schedule_times(lines_binary)
+                # Extract destination and operating_time from grayscale
+                destination = extract_destination(lines_gray)
+                operating_time = extract_operating_time(lines_gray)
 
-            # Debug
-            print(
-                f"线路-{route}, 站名-{station}, 开往-{destination}, 时段-{operating_time}",
-            )
-            minutes = {}
-            for time in schedule_times:
-                hour, minute = map(int, time.split(":"))
-                minutes[hour] = minutes.get(hour, []) + [minute]
-            for hour, mins in sorted(
-                minutes.items(), key=lambda x: 24 if x[0] == 0 else x[0]
-            ):
-                print(f"{hour:02}:", end="")
-                for minute in mins:
-                    print(f" {minute:02}", end="")
-                print()
+                # Auto-correct destination using route stations
+                if route_stations and route and destination:
+                    corrected_destination = auto_correct_destination(
+                        destination, route, route_stations
+                    )
+                    if corrected_destination != destination:
+                        print(f"Auto-correct: '{destination}' -> '{corrected_destination}'")
+                    destination = corrected_destination
 
-            result = {
-                "filename": os.path.basename(image_path) + suffix,
-                "route": route,
-                "station": station,
-                "destination": destination,
-                "operating_time": operating_time,
-                "schedule_times": schedule_times,
-            }
-            results.append(result)
+                # Perform OCR on binary image for schedule_times
+                ocr_binary = ocrmac.OCR(binary_img, framework="livetext")
+                annotations_binary = ocr_binary.recognize()
+                ocr_binary.annotate_PIL().save(annotation_path_binary)
+
+                # Group text by lines for binary OCR
+                lines_binary = group_text_by_lines(annotations_binary)
+
+                # Extract schedule_times from binary
+                schedule_times = extract_schedule_times(lines_binary)
+
+                # Debug
+                print(
+                    f"线路-{route}, 站名-{station}, 开往-{destination}, 时段-{operating_time}",
+                )
+                minutes = {}
+                for time in schedule_times:
+                    hour, minute = map(int, time.split(":"))
+                    minutes[hour] = minutes.get(hour, []) + [minute]
+                for hour, mins in sorted(
+                    minutes.items(), key=lambda x: 24 if x[0] == 0 else x[0]
+                ):
+                    print(f"{hour:02}:", end="")
+                    for minute in mins:
+                        print(f" {minute:02}", end="")
+                    print()
+
+                result = {
+                    "filename": os.path.basename(image_path) + suffix,
+                    "route": route,
+                    "station": station,
+                    "destination": destination,
+                    "operating_time": operating_time,
+                    "schedule_times": schedule_times,
+                }
+                results.append(result)
 
         return results
     except Exception as e:
@@ -395,6 +625,12 @@ def main():
     """
     Process all timetable images in parallel and output to JSONL
     """
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Parse timetable images using OCR")
+    parser.add_argument("-l", "--line", type=str, help="Specific line to process (e.g., 18)")
+    args = parser.parse_args()
+
     timetables_dir = Path("timetables")
     output_file = "timetable.jsonl"
     max_workers = 10
@@ -409,6 +645,11 @@ def main():
 
     for ext in image_extensions:
         image_files.extend(timetables_dir.glob(f"*{ext}"))
+
+    # Filter by line if specified
+    if args.line:
+        image_files = [f for f in image_files if f.stem.startswith(f"{args.line}-")]
+        print(f"Filtering for line {args.line}")
 
     if not image_files:
         print("No image files found in timetables directory")
