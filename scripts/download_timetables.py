@@ -7,6 +7,7 @@ Downloads timetable images from all Beijing subway operators
 import requests
 import re
 import argparse
+import ssl
 from pathlib import Path
 from urllib.parse import urljoin
 from bs4 import BeautifulSoup
@@ -15,6 +16,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+from urllib3.poolmanager import PoolManager
 import json
 
 # Configure logging
@@ -22,6 +24,34 @@ logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
+
+
+# Global permissive SSL context (created once for performance)
+_permissive_ssl_context = None
+
+
+def _get_permissive_ssl_context():
+    global _permissive_ssl_context
+    if _permissive_ssl_context is None:
+        _permissive_ssl_context = ssl.create_default_context()
+        _permissive_ssl_context.check_hostname = False
+        _permissive_ssl_context.verify_mode = ssl.CERT_NONE
+        _permissive_ssl_context.set_ciphers("DEFAULT:@SECLEVEL=0")
+    return _permissive_ssl_context
+
+
+class PermissiveSSLAdapter(HTTPAdapter):
+    """HTTPAdapter that injects a permissive SSL context for older servers
+    like bjsubway.com. Overrides build_connection_pool_key_attributes rather
+    than init_poolmanager because requests calls the former to build the
+    pool_kwargs dict that ultimately sets ssl_context on the connection."""
+
+    def build_connection_pool_key_attributes(self, request, verify, cert=None):
+        host_params, pool_kwargs = (
+            super().build_connection_pool_key_attributes(request, verify, cert)
+        )
+        pool_kwargs["ssl_context"] = _get_permissive_ssl_context()
+        return host_params, pool_kwargs
 
 
 class SubwayTimetableDownloader:
@@ -47,7 +77,8 @@ class SubwayTimetableDownloader:
         )
 
         # Mount adapters with retry strategy and connection pooling
-        adapter = HTTPAdapter(
+        # Use permissive SSL to work with bjsubway.com (older SSL config)
+        adapter = PermissiveSSLAdapter(
             max_retries=retry_strategy,
             pool_connections=10,  # Limit connection pool size
             pool_maxsize=10,

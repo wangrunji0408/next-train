@@ -1,18 +1,17 @@
 #!/usr/bin/env python3
 """
 Check update dates for all Beijing Subway lines
+Uses curl for HTTP requests to avoid SSL compatibility issues
 """
 
-import requests
+import subprocess
 import re
+import json
 from pathlib import Path
 from urllib.parse import urljoin
 from bs4 import BeautifulSoup
 import logging
-import json
 from datetime import datetime
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
@@ -20,29 +19,42 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def create_session():
-    """Create a session with retry strategy"""
-    session = requests.Session()
-    retry_strategy = Retry(
-        total=3,
-        backoff_factor=1,
-        status_forcelist=[429, 500, 502, 503, 504],
-        allowed_methods=["HEAD", "GET", "OPTIONS"],
-    )
-    adapter = HTTPAdapter(
-        max_retries=retry_strategy,
-        pool_connections=10,
-        pool_maxsize=10,
-        pool_block=True,
-    )
-    session.mount("http://", adapter)
-    session.mount("https://", adapter)
-    session.headers.update(
-        {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-        }
-    )
-    return session
+def fetch_url(url):
+    """Fetch URL using curl (handles SSL better than Python's requests on macOS).
+    Returns decoded HTML string, handling gb2312/gbk encoding."""
+    try:
+        result = subprocess.run(
+            ["curl", "-sS", "--connect-timeout", "15", "--max-time", "30",
+             "-H", "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+             url],
+            capture_output=True, timeout=35
+        )
+        if result.returncode != 0:
+            logger.error(f"curl failed for {url}: {result.stderr.decode('utf-8', errors='replace').strip()}")
+            return None
+
+        raw = result.stdout
+        # Try to detect charset from meta tag
+        head = raw[:2048]
+        charset_match = re.search(rb'charset\s*=\s*([a-zA-Z0-9_-]+)', head)
+        if charset_match:
+            encoding = charset_match.group(1).decode('ascii').lower()
+            if encoding in ('gb2312', 'gbk', 'gb18030'):
+                return raw.decode('gb18030')
+            try:
+                return raw.decode(encoding)
+            except Exception:
+                pass
+        # Fallback: try common Chinese encodings then utf-8
+        for enc in ['gb18030', 'utf-8']:
+            try:
+                return raw.decode(enc)
+            except (UnicodeDecodeError, LookupError):
+                continue
+        return raw.decode('utf-8', errors='replace')
+    except Exception as e:
+        logger.error(f"Failed to fetch {url}: {e}")
+        return None
 
 
 def extract_update_date(soup):
@@ -60,18 +72,18 @@ def extract_update_date(soup):
         return None
 
 
-def get_line_update_date(session, line_code):
+def get_line_update_date(line_code):
     """Get the update date for a line"""
     try:
-        response = session.get("https://www.bjsubway.com/station/xltcx/", timeout=30)
-        soup = BeautifulSoup(response.content, "html.parser")
+        html = fetch_url("https://www.bjsubway.com/station/xltcx/")
+        if not html:
+            return None
+        soup = BeautifulSoup(html, "html.parser")
 
         # Find all station links for this line
-        # Note: Some lines use "lines" (plural) instead of "line" in URLs
         station_links = []
         for link in soup.find_all("a", href=True):
             href = link["href"]
-            # Check both "line{code}" and "lines{code}" patterns
             if (f"/line{line_code}/" in href or f"/lines{line_code}/" in href) and ".html" in href:
                 station_links.append(urljoin("https://www.bjsubway.com", href))
 
@@ -82,10 +94,10 @@ def get_line_update_date(session, line_code):
         # Try up to 3 stations
         for station_url in station_links[:3]:
             try:
-                station_response = session.get(station_url, timeout=30)
-                station_soup = BeautifulSoup(
-                    station_response.content, "html.parser"
-                )
+                station_html = fetch_url(station_url)
+                if not station_html:
+                    continue
+                station_soup = BeautifulSoup(station_html, "html.parser")
                 update_date = extract_update_date(station_soup)
                 if update_date:
                     return update_date
@@ -122,91 +134,91 @@ def main():
         "jc": "首都机场线",
     }
 
-    session = create_session()
-    results = {}
-    cutoff_date = datetime(2025, 7, 1)
-
-    logger.info("Checking update dates for all lines...")
-    print("\n" + "=" * 70)
-    print("Beijing Subway Line Update Check")
-    print("=" * 70 + "\n")
-
-    for line_code, line_name in lines.items():
-        logger.info(f"Checking {line_name} ({line_code})...")
-        update_date = get_line_update_date(session, line_code)
-
-        if update_date:
-            results[f"bjsubway_line_{line_code}"] = update_date
-            # Parse update date
-            try:
-                update_dt = datetime.strptime(update_date, "%Y-%m")
-                status = "✓ OK" if update_dt < cutoff_date else "⚠ NEEDS UPDATE"
-                print(f"{line_name:12} | {update_date:10} | {status}")
-            except:
-                print(f"{line_name:12} | {update_date:10} | ? UNKNOWN")
-        else:
-            results[f"bjsubway_line_{line_code}"] = None
-            print(f"{line_name:12} | {'N/A':10} | ✗ NO DATE FOUND")
-
-    # Save to cache file
+    # Load existing cache
     output_dir = Path("timetables")
     output_dir.mkdir(exist_ok=True)
     cache_file = output_dir / "line_updates.json"
 
+    old_cache = {}
+    if cache_file.exists():
+        try:
+            with open(cache_file, "r", encoding="utf-8") as f:
+                old_cache = json.load(f)
+        except Exception:
+            pass
+
+    results = {}
+
+    logger.info("Checking update dates for all lines...")
+    print("\n" + "=" * 80)
+    print("Beijing Subway Line Update Check (2026-06-14)")
+    print("=" * 80 + "\n")
+    print(f"{'Line':12} | {'Website':10} | {'Cached':10} | {'Status'}")
+    print("-" * 80)
+
+    changed_lines = []
+    ok_lines = []
+    no_date_lines = []
+
+    for line_code, line_name in lines.items():
+        logger.info(f"Checking {line_name} ({line_code})...")
+        update_date = get_line_update_date(line_code)
+
+        cache_key = f"bjsubway_line_{line_code}"
+        cached_date = old_cache.get(cache_key)
+
+        if update_date:
+            results[cache_key] = update_date
+            if cached_date is None:
+                status = "🆕 NEW (首次发现)"
+                changed_lines.append((line_name, line_code, cached_date, update_date))
+            elif update_date != cached_date:
+                status = f"⚠ CHANGED"
+                changed_lines.append((line_name, line_code, cached_date, update_date))
+            else:
+                status = "✓ UNCHANGED"
+                ok_lines.append((line_name, line_code, update_date))
+            print(f"{line_name:12} | {update_date:10} | {str(cached_date):10} | {status}")
+        else:
+            results[cache_key] = None
+            no_date_lines.append((line_name, line_code))
+            status = f"✗ NO DATE (cached: {cached_date})" if cached_date else "✗ NO DATE"
+            print(f"{line_name:12} | {'N/A':10} | {str(cached_date):10} | {status}")
+
+    # Save results
     with open(cache_file, "w", encoding="utf-8") as f:
         json.dump(results, f, ensure_ascii=False, indent=2)
 
-    logger.info(f"\nResults saved to {cache_file}")
-
     # Summary
-    print("\n" + "=" * 70)
+    print("\n" + "=" * 80)
     print("Summary")
-    print("=" * 70 + "\n")
+    print("=" * 80 + "\n")
 
-    needs_update = []
-    ok_lines = []
-    no_date = []
+    if changed_lines:
+        print(f"⚠ Lines with changes ({len(changed_lines)}):")
+        for line_name, line_code, old, new in changed_lines:
+            print(f"  - {line_name} ({line_code}): {old} -> {new}")
+        print()
 
-    for line_code, line_name in lines.items():
-        cache_key = f"bjsubway_line_{line_code}"
-        update_date = results.get(cache_key)
+    print(f"✓ Lines unchanged: {len(ok_lines)}")
+    for line_name, line_code, date in ok_lines:
+        print(f"  - {line_name} ({line_code}): {date}")
 
-        if update_date:
-            try:
-                update_dt = datetime.strptime(update_date, "%Y-%m")
-                if update_dt >= cutoff_date:
-                    needs_update.append(f"{line_name} ({line_code})")
-                else:
-                    ok_lines.append(f"{line_name} ({line_code})")
-            except:
-                no_date.append(f"{line_name} ({line_code})")
-        else:
-            no_date.append(f"{line_name} ({line_code})")
+    if no_date_lines:
+        print(f"\n✗ Lines with no date found: {len(no_date_lines)}")
+        for line_name, line_code in no_date_lines:
+            print(f"  - {line_name} ({line_code})")
 
-    print(f"✓ Lines up-to-date (< 2025-07): {len(ok_lines)}")
-    for line in ok_lines:
-        print(f"  - {line}")
+    if changed_lines:
+        print(f"\n{'=' * 80}")
+        print("Commands to update changed lines:")
+        print("=" * 80 + "\n")
+        for line_name, line_code, old, new in changed_lines:
+            # Use the line number/name for download
+            arg = line_code if line_code.isdigit() else line_name.replace("线", "")
+            print(f"  .venv/bin/python scripts/download_timetables.py -l {arg} -f")
 
-    print(f"\n⚠ Lines needing update (>= 2025-07): {len(needs_update)}")
-    for line in needs_update:
-        print(f"  - {line}")
-
-    if no_date:
-        print(f"\n✗ Lines with no date found: {len(no_date)}")
-        for line in no_date:
-            print(f"  - {line}")
-
-    print("\n" + "=" * 70)
-    print("Commands to update lines:")
-    print("=" * 70 + "\n")
-
-    if needs_update:
-        for line in needs_update:
-            # Extract line code from "线路名 (code)" format
-            match = re.search(r"\(([^)]+)\)", line)
-            if match:
-                code = match.group(1)
-                print(f"python3 scripts/download_timetables.py -l {code}")
+    print()
 
 
 if __name__ == "__main__":

@@ -48,6 +48,14 @@
 - 语言切换会触发 `languageChanged` 事件
 - 翻译文件在 `i18n.js` 的 `translations` 对象中
 
+### Python 虚拟环境
+项目使用 `.venv` 虚拟环境（Python 3.14），所有 Python 脚本需通过虚拟环境运行：
+```bash
+.venv/bin/python scripts/download_timetables.py
+.venv/bin/python scripts/parse_timetables.py
+# 或先激活: source .venv/bin/activate
+```
+
 ### 启动开发服务器
 ```bash
 python3 -m http.server 8000  # 简单HTTP服务器
