@@ -25,7 +25,7 @@ class I18n {
         this.translations = {
             zh: {
                 // Header
-                appTitle: '🚇 下班车时间',
+                appTitle: '下班车时间',
                 
                 // Loading and status
                 locating: '正在定位中...',
@@ -79,7 +79,7 @@ class I18n {
             },
             en: {
                 // Header
-                appTitle: '🚇 Next Train',
+                appTitle: 'Next Train',
                 
                 // Loading and status
                 locating: 'Locating...',

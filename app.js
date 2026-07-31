@@ -174,8 +174,8 @@ class NextTrainApp {
     updateLanguageDisplay() {
         const currentLang = window.i18n.getCurrentLanguage();
         const langMap = {
-            'zh': '🌐 中文',
-            'en': '🌐 English'
+            'zh': '中文',
+            'en': 'EN'
         };
         this.currentLanguageEl.textContent = langMap[currentLang];
     }
@@ -365,32 +365,15 @@ class NextTrainApp {
     renderLineSelector() {
         this.lineSelectorEl.innerHTML = '';
 
+        // 当前线路颜色作为全局主题色，驱动方向选择框、进度条等元素
+        document.documentElement.style.setProperty(
+            '--line-color', this.selectedLine.lineColor || '#8A8D93'
+        );
+
         this.nearestStation.lines.forEach(line => {
             const btn = document.createElement('button');
             btn.className = `line-btn ${line.lineName === this.selectedLine.lineName ? 'active' : ''}`;
-
-            // Apply different styles for selected vs unselected lines
-            if (line.lineColor && line.lineColor !== null) {
-                if (line.lineName === this.selectedLine.lineName) {
-                    // Selected line: brighter color + glow effect + scale
-                    btn.style.backgroundColor = line.lineColor;
-                    btn.style.color = '#ffffff';
-                    btn.style.border = 'none';
-                    btn.style.transform = 'scale(1.15)';
-                    btn.style.boxShadow = `0 0 20px ${line.lineColor}, 0 4px 15px rgba(0,0,0,0.3)`;
-                    btn.style.filter = 'brightness(1.2) saturate(1.1)';
-                    btn.style.zIndex = '10';
-                } else {
-                    // Unselected line: normal color with subtle shadow
-                    btn.style.backgroundColor = line.lineColor;
-                    btn.style.color = '#ffffff';
-                    btn.style.border = 'none';
-                    btn.style.transform = 'scale(1)';
-                    btn.style.boxShadow = '0 2px 8px rgba(0,0,0,0.2)';
-                    btn.style.filter = 'brightness(0.9)';
-                    btn.style.zIndex = '1';
-                }
-            }
+            btn.style.setProperty('--line-color', line.lineColor || '#8A8D93');
 
             // Use formatLineName to get the localized line name for display
             btn.textContent = this.formatLineName(line.route);
@@ -607,22 +590,20 @@ class NextTrainApp {
         this.loadingEl.style.display = 'none';
         this.appEl.style.display = 'none';
         this.errorEl.style.display = 'block';
+        this.errorEl.classList.add('error-state');
         this.errorEl.textContent = message;
     }
 
     showLocationFallback() {
         this.loadingEl.style.display = 'none';
         this.errorEl.style.display = 'block';
+        this.errorEl.classList.remove('error-state');
         this.errorEl.innerHTML = `
-            <div style="text-align: center;">
-                <p style="margin-bottom: 20px;">${window.i18n.t('noLocationFallback')}</p>
-                <div style="margin-bottom: 20px;">
-                    <input type="text" id="stationInput" placeholder="${window.i18n.t('searchPlaceholder')}" 
-                           style="width: 100%; padding: 15px; border: none; border-radius: 10px; 
-                                  background: rgba(255,255,255,0.9); color: #333; font-size: 16px;
-                                  margin-bottom: 10px;">
-                    <div id="searchResults" style="max-height: 200px; overflow-y: auto;"></div>
-                </div>
+            <div>
+                <p class="panel-hint">${window.i18n.t('noLocationFallback')}</p>
+                <input type="text" id="stationInput" class="station-input"
+                       placeholder="${window.i18n.t('searchPlaceholder')}">
+                <div id="searchResults" style="max-height: 240px; overflow-y: auto;"></div>
             </div>
         `;
 
@@ -641,10 +622,7 @@ class NextTrainApp {
             );
 
             results.innerHTML = filtered.map(station =>
-                `<button onclick="app.selectStationManually('${station.name}')" 
-                 style="display: block; width: 100%; margin: 5px 0; padding: 12px; 
-                        background: rgba(255,255,255,0.8); border: none; border-radius: 8px; 
-                        color: #333; font-size: 15px; cursor: pointer; text-align: left;">
+                `<button class="list-btn" onclick="app.selectStationManually('${station.name}')">
                     ${station.name}
                 </button>`
             ).join('');
@@ -685,21 +663,15 @@ class NextTrainApp {
         this.appEl.style.display = 'none';
         this.errorEl.innerHTML = `
             <div style="text-align: center;">
-                <p style="margin-bottom: 20px;">${this.userLocation ? window.i18n.t('nearbyStations') : window.i18n.t('allStations')}</p>
+                <p class="panel-hint">${this.userLocation ? window.i18n.t('nearbyStations') : window.i18n.t('allStations')}</p>
                 <div id="stationList" style="max-height: 400px; overflow-y: auto;">
                     ${sortedStations.map(station => `
-                        <button onclick="app.selectStationFromList('${station.name}')" 
-                         style="display: block; width: 100%; margin: 5px 0; padding: 12px; 
-                                background: rgba(255,255,255,0.8); border: none; border-radius: 8px; 
-                                color: #333; font-size: 15px; cursor: pointer; text-align: left;">
+                        <button class="list-btn" onclick="app.selectStationFromList('${station.name}')">
                             ${station.name}
                         </button>
                     `).join('')}
                 </div>
-                <button onclick="app.backToMain()" 
-                 style="margin-top: 15px; padding: 12px 24px; 
-                        background: rgba(255,255,255,0.3); border: none; border-radius: 8px; 
-                        color: white; font-size: 16px; cursor: pointer;">
+                <button class="back-btn" onclick="app.backToMain()">
                     ${window.i18n.t('back')}
                 </button>
             </div>
@@ -747,34 +719,13 @@ class NextTrainApp {
         const input = document.createElement('input');
         input.type = 'text';
         input.value = currentStationName;
-        input.style.cssText = `
-            background: transparent;
-            border: 2px solid rgba(255,255,255,0.5);
-            border-radius: 8px;
-            color: white;
-            font-size: 32px;
-            font-weight: 600;
-            text-align: center;
-            width: 100%;
-            padding: 5px 10px;
-            outline: none;
-        `;
+        input.className = 'station-edit-input';
         input.placeholder = window.i18n.t('searchPlaceholder');
 
         // Create results container
         const resultsContainer = document.createElement('div');
         resultsContainer.id = 'stationSearchResults';
-        resultsContainer.style.cssText = `
-            position: fixed;
-            background: rgba(255,255,255,0.95);
-            border-radius: 8px;
-            max-height: 200px;
-            overflow-y: auto;
-            z-index: 99999;
-            display: none;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
-            backdrop-filter: blur(10px);
-        `;
+        resultsContainer.className = 'station-search-results';
 
         // Store original content
         const originalContent = this.stationNameEl.innerHTML;
@@ -812,10 +763,7 @@ class NextTrainApp {
 
             if (filtered.length > 0) {
                 resultsContainer.innerHTML = filtered.map(station =>
-                    `<div onclick="app.selectStationFromInput('${station.name}')" 
-                     style="padding: 12px; cursor: pointer; color: #333; border-bottom: 1px solid rgba(0,0,0,0.1); font-size: 16px;"
-                     onmouseover="this.style.backgroundColor='rgba(0,0,0,0.1)'"
-                     onmouseout="this.style.backgroundColor='transparent'">
+                    `<div class="search-result-item" onclick="app.selectStationFromInput('${station.name}')">
                         ${station.name}
                     </div>`
                 ).join('');
