@@ -10,15 +10,15 @@
     },
     {
       "lineName": "12",
-      "lineColor": "#9B5A1A"
+      "lineColor": "#9C4F01"
     },
     {
       "lineName": "13",
-      "lineColor": "#F9E700"
+      "lineColor": "#F4DA40"
     },
     {
       "lineName": "14",
-      "lineColor": "#D4A7A1"
+      "lineColor": "#CA9A8E"
     },
     {
       "lineName": "15",
@@ -26,27 +26,27 @@
     },
     {
       "lineName": "17",
-      "lineColor": "#00A9A9"
+      "lineColor": "#00ABAB"
     },
     {
       "lineName": "19",
-      "lineColor": "#D6AAC1"
+      "lineColor": "#D3A3C9"
     },
     {
       "lineName": "2",
-      "lineColor": "#00529b"
+      "lineColor": "#00529B"
     },
     {
       "lineName": "3",
-      "lineColor": "#D90626"
+      "lineColor": "#D90627"
     },
     {
       "lineName": "4",
-      "lineColor": "#008994"
+      "lineColor": "#008C95"
     },
     {
       "lineName": "5",
-      "lineColor": "#ae005f"
+      "lineColor": "#AE005F"
     },
     {
       "lineName": "6",
@@ -95,6 +95,22 @@
     {
       "lineName": "首都机场",
       "lineColor": "#9B91B1"
+    },
+    {
+      "lineName": "11",
+      "lineColor": "#FF8674"
+    },
+    {
+      "lineName": "16",
+      "lineColor": "#6BA539"
+    },
+    {
+      "lineName": "18",
+      "lineColor": "#685BC7"
+    },
+    {
+      "lineName": "S1",
+      "lineColor": "#A45A2A"
     }
   ],
   "coordinates": {
