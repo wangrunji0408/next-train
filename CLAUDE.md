@@ -50,6 +50,14 @@
 }
 ```
 
+#### 线路颜色来源
+`lines` 中的 `lineColor` 为线路官方标志色（HEX 格式），来源为维基百科「北京地铁颜色」模板：
+
+- **维基百科：北京地铁颜色模板** — https://zh.wikipedia.org/zh-cn/Template:%E5%8C%97%E4%BA%AC%E5%9C%B0%E9%93%81%E9%A2%9C%E8%89%B2
+- 标准色号依据北京市地方标准 DB11/T657.2（Pantone 色号转换）
+- 各线路颜色参考：16号线=草绿 `#6BA539`、11号线=`#FF8674`、18号线=`#685BC7`、S1线=`#A45A2A` 等
+- 前端 `app.js` 通过 `fetch('data/routes.json')` 读取 `lineColor` 并渲染线路颜色
+
 ### timetable.jsonl
 每行一个JSON对象：
 ```json
