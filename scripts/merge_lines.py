@@ -23,6 +23,11 @@ def main():
     parser.add_argument("-o", "--output", default="data/timetable.jsonl")
     parser.add_argument("-c", "--check", action="store_true")
     parser.add_argument("-d", "--dedup", action="store_true")
+    parser.add_argument(
+        "-k", "--keep",
+        action="store_true",
+        help="保留已有输出中未出现在 data/lines 的线路（局部更新时使用）",
+    )
     args = parser.parse_args()
 
     lines_dir = Path("data/lines")
@@ -30,8 +35,17 @@ def main():
         print("错误: data/lines 目录不存在")
         sys.exit(1)
 
+    routes_in_lines = {f.stem for f in lines_dir.glob("*.jsonl")}
+
     all_records = []
     missing = []
+    if args.keep and os.path.exists(args.output):
+        with open(args.output, encoding="utf-8") as fh:
+            kept = [json.loads(line) for line in fh if line.strip()]
+        kept = [r for r in kept if r.get("route") not in routes_in_lines]
+        print(f"  保留原有线路: {len(kept)} 条")
+        all_records.extend(kept)
+
     for f in sorted(lines_dir.glob("*.jsonl")):
         route = f.stem
         try:

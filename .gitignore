@@ -1,5 +1,7 @@
 .venv
 timetables
-timetables-heic
 annotations
 __pycache__
+work/
+data/lines/
+.DS_Store

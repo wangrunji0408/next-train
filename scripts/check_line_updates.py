@@ -151,7 +151,7 @@ def main():
 
     logger.info("Checking update dates for all lines...")
     print("\n" + "=" * 80)
-    print("Beijing Subway Line Update Check (2026-06-14)")
+    print(f"Beijing Subway Line Update Check ({datetime.now():%Y-%m-%d})")
     print("=" * 80 + "\n")
     print(f"{'Line':12} | {'Website':10} | {'Cached':10} | {'Status'}")
     print("-" * 80)
